@@ -14,6 +14,9 @@ export class BallView {
   showTrail = false;
   /** Minimum on-screen size: the ball is scaled up with camera distance so it never vanishes. */
   private camera: THREE.Camera | null = null;
+  /** Extra size multiplier (the batting view draws the pitch bigger so it's easier to track). */
+  boost = 1;
+  private readonly glow: THREE.Sprite;
 
   constructor(scene: THREE.Scene) {
     const tex = ballTexture();
@@ -23,6 +26,13 @@ export class BallView {
     );
     this.mesh.castShadow = true;
     scene.add(this.mesh);
+
+    this.glow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, depthWrite: false, opacity: 0.8 }),
+    );
+    this.glow.scale.setScalar(BALL_RADIUS * 6);
+    this.glow.visible = false;
+    this.mesh.add(this.glow);
 
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.35, 16),
@@ -49,7 +59,7 @@ export class BallView {
     this.mesh.position.set(p.x, p.y, p.z);
     if (this.camera) {
       const d = this.camera.position.distanceTo(this.mesh.position);
-      this.mesh.scale.setScalar(Math.max(1, d / 55));
+      this.mesh.scale.setScalar(Math.max(this.boost, d / 55));
     }
     this.mesh.rotation.x = spinAngle;
     this.shadow.visible = p.y < 150;
@@ -57,6 +67,10 @@ export class BallView {
     const s = Math.max(0.3, 1 - p.y / 120);
     this.shadow.scale.setScalar(s);
     if (trail) this.pushTrail(p);
+  }
+
+  setGlow(on: boolean): void {
+    this.glow.visible = on;
   }
 
   clearTrail(): void {
@@ -104,6 +118,22 @@ function ballTexture(): THREE.CanvasTexture {
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function glowTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 4, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.35, 'rgba(255,250,220,0.35)');
+  g.addColorStop(1, 'rgba(255,250,220,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;

@@ -52,7 +52,7 @@ export function fenceDistance(sprayDeg: number): number {
 }
 
 /** How long after the click the bat reaches the hitting zone. */
-export const SWING_TIME_MS = 150;
+export const SWING_TIME_MS = 90;
 
 export type DifficultyName = 'rookie' | 'pro' | 'allstar' | 'legend';
 
@@ -63,8 +63,16 @@ export interface Difficulty {
   timingScale: number;
   /** Multiplies the human batter's PCI size. */
   pciScale: number;
+  /** Fraction (0-1) the PCI is pulled toward the ball when a swing is judged. */
+  contactAssist: number;
+  /** Show where the pitch will cross the plate once it's released. */
+  pitchGuide: boolean;
   /** Rating the CPU opponent plays at (0-100). */
   cpuRating: number;
+  /** Velocity/movement rating of the CPU pitcher you bat against. */
+  cpuPitcherStuff: number;
+  /** Added to the CPU pitcher's chance of throwing in the zone. */
+  cpuZoneBias: number;
   /** Multiplies the human pitcher's meter speed. */
   meterSpeed: number;
   /** Multiplies the human pitcher's miss distance. */
@@ -72,8 +80,56 @@ export interface Difficulty {
 }
 
 export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
-  rookie: { name: 'rookie', label: 'Rookie', timingScale: 1.6, pciScale: 1.3, cpuRating: 40, meterSpeed: 0.8, pitchErrorScale: 0.7 },
-  pro: { name: 'pro', label: 'Pro', timingScale: 1.3, pciScale: 1.15, cpuRating: 58, meterSpeed: 0.95, pitchErrorScale: 0.9 },
-  allstar: { name: 'allstar', label: 'All-Star', timingScale: 1.0, pciScale: 1.0, cpuRating: 75, meterSpeed: 1.1, pitchErrorScale: 1.0 },
-  legend: { name: 'legend', label: 'Legend', timingScale: 0.8, pciScale: 0.85, cpuRating: 90, meterSpeed: 1.25, pitchErrorScale: 1.15 },
+  rookie: {
+    name: 'rookie',
+    label: 'Rookie',
+    timingScale: 2.0,
+    pciScale: 1.5,
+    contactAssist: 0.4,
+    pitchGuide: true,
+    cpuRating: 40,
+    cpuPitcherStuff: 20,
+    cpuZoneBias: 0.2,
+    meterSpeed: 0.8,
+    pitchErrorScale: 0.7,
+  },
+  pro: {
+    name: 'pro',
+    label: 'Pro',
+    timingScale: 1.4,
+    pciScale: 1.2,
+    contactAssist: 0.15,
+    pitchGuide: false,
+    cpuRating: 58,
+    cpuPitcherStuff: 45,
+    cpuZoneBias: 0.08,
+    meterSpeed: 0.95,
+    pitchErrorScale: 0.9,
+  },
+  allstar: {
+    name: 'allstar',
+    label: 'All-Star',
+    timingScale: 1.0,
+    pciScale: 1.0,
+    contactAssist: 0,
+    pitchGuide: false,
+    cpuRating: 75,
+    cpuPitcherStuff: 75,
+    cpuZoneBias: 0,
+    meterSpeed: 1.1,
+    pitchErrorScale: 1.0,
+  },
+  legend: {
+    name: 'legend',
+    label: 'Legend',
+    timingScale: 0.8,
+    pciScale: 0.85,
+    contactAssist: 0,
+    pitchGuide: false,
+    cpuRating: 90,
+    cpuPitcherStuff: 92,
+    cpuZoneBias: 0,
+    meterSpeed: 1.25,
+    pitchErrorScale: 1.15,
+  },
 };

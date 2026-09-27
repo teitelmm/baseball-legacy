@@ -60,9 +60,9 @@ export function cpuMissStd(control: number): number {
   return 1.2 + (100 - control) * 0.055;
 }
 
-export function planCpuPitch(p: Pitcher, count: Count, batterHand: Handedness, rng: Rng): CpuPitchPlan {
+export function planCpuPitch(p: Pitcher, count: Count, batterHand: Handedness, rng: Rng, zoneBias = 0): CpuPitchPlan {
   const type = choosePitch(p, count, rng);
-  const inZone = rng.chance(zoneRate(count));
+  const inZone = rng.chance(Math.min(0.95, zoneRate(count) + zoneBias));
   const target = chooseTarget(type, inZone, batterHand, rng);
   const std = cpuMissStd(p.ratings.control) * INCH;
   const plateLoc = { x: target.x + rng.gaussian(0, std), y: target.y + rng.gaussian(0, std) };

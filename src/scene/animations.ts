@@ -1,3 +1,4 @@
+import { SWING_TIME_MS } from '../core/constants';
 import type { Keyframes, Pose } from './humanoid';
 
 // All poses are in the model's root space: it faces +z and its right side is -x.
@@ -26,8 +27,9 @@ export const BATTER_LOAD: Pose = {
   bat: { h: [-0.75, 4.4, 0.45], yaw: 205, pitch: 50 },
 };
 
-export const SWING_CONTACT_T = 0.15;
-export const SWING_DURATION = 0.75;
+/** Seconds from the start of the swing until the barrel reaches the ball. */
+export const SWING_CONTACT_T = SWING_TIME_MS / 1000;
+export const SWING_DURATION = SWING_CONTACT_T + 0.6;
 const BAT_SWEET_SPOT = 2.2;
 
 /**
@@ -78,13 +80,14 @@ export function batterSwingKeys(contactZ: number, contactY: number): Keyframes {
     footR: [-1.1, 0.45, 0.05],
     bat: { h: [0.65, 4.6, 0.25], yaw: -150, pitch: 38 },
   };
+  const c = SWING_CONTACT_T;
   return [
     [0, BATTER_LOAD],
-    [0.06, stride],
-    [0.11, launch],
-    [SWING_CONTACT_T, contact],
-    [0.22, extend],
-    [0.4, finish],
+    [c * 0.4, stride],
+    [c * 0.73, launch],
+    [c, contact],
+    [c + 0.07, extend],
+    [c + 0.25, finish],
     [SWING_DURATION, finish],
   ];
 }

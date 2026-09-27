@@ -116,7 +116,11 @@ requestAnimationFrame(frame);
 if (new URLSearchParams(location.search).has('test')) {
   (window as unknown as { __game: unknown }).__game = {
     start: (opts: SessionOptions) => start({ seed: 42, ...opts }),
-    setAuto: (v: boolean) => session && (session.auto = v),
+    setAuto: (v: boolean, lateMs = 0) => {
+      if (!session) return;
+      session.auto = v;
+      session.autoTimingMs = lateMs;
+    },
     snapshot: () => session?.snapshot() ?? null,
     setTimeScale: (s: number) => {
       tuning.timeScale = s;

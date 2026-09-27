@@ -6,6 +6,8 @@ export interface SwingParams {
   /** Multipliers from difficulty (1 = baseline). */
   timingScale: number;
   pciScale: number;
+  /** Fraction (0-1) the PCI is pulled toward the ball before judging location. */
+  contactAssist?: number;
 }
 
 export const BASE_PCI = {
@@ -16,10 +18,10 @@ export const BASE_PCI = {
 };
 
 export const BASE_TIMING = {
-  perfect: 16, // ms
-  good: 40,
-  ok: 75,
-  whiff: 115,
+  perfect: 20, // ms
+  good: 50,
+  ok: 95,
+  whiff: 150,
 };
 
 export interface SwingInput {
@@ -99,8 +101,10 @@ export function evaluateSwing(input: SwingInput, ctx: SwingContext, rng: Rng): S
 
   const pci = pciSize(input.type, ctx.contactRating, ctx.params);
   // Offset of the ball from the PCI center, inches. dy > 0 means the ball is above the PCI.
-  const dx = (ctx.ballLoc.x - input.pci.x) / INCH;
-  const dy = (ctx.ballLoc.y - input.pci.y) / INCH;
+  // Contact assist (easier difficulties) shrinks the miss before it's judged.
+  const keep = 1 - Math.min(1, Math.max(0, ctx.params.contactAssist ?? 0));
+  const dx = ((ctx.ballLoc.x - input.pci.x) * keep) / INCH;
+  const dy = ((ctx.ballLoc.y - input.pci.y) * keep) / INCH;
   const nd = Math.hypot(dx / pci.outerHalfW, dy / pci.outerHalfH);
   if (nd > 1) {
     return { kind: 'whiff', reason: 'location', timingLabel: tLabel, timingErrorMs: dt };
@@ -122,10 +126,11 @@ export function evaluateSwing(input: SwingInput, ctx: SwingContext, rng: Rng): S
   const ev = 38 + (maxEv + pitchBonus - 38) * Math.pow(quality, 0.65) + rng.gaussian(0, 1.5);
 
   // Launch angle: the bat under the ball (ball above PCI) lifts it; over the ball tops it.
-  const la = 11 + 5.5 * dy + 0.35 * dy * Math.abs(dy) + rng.gaussian(0, 2.5) - (dt > 0 ? dt * 0.04 : 0);
+  const la = 11 + 5.5 * dy + 0.35 * dy * Math.abs(dy) + rng.gaussian(0, 2.5) - (dt > 0 ? (dt / w.ok) * 4 : 0);
 
-  // Spray: early pulls, late goes the other way. "Pull" is positive here.
-  const pull = 3 - dt * 0.42 + rng.gaussian(0, 4);
+  // Spray: early pulls, late goes the other way. "Pull" is positive here. It scales with
+  // the timing window, so the edge of the "OK" window is still fair on every difficulty.
+  const pull = 3 - (dt / w.ok) * 32 + rng.gaussian(0, 4);
   const sprayDeg = ctx.bats === 'R' ? -pull : pull;
 
   const contactLabel =

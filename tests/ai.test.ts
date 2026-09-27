@@ -58,4 +58,14 @@ describe('CPU AI', () => {
     }
     expect(sum / n).toBeLessThan(-15);
   });
+
+  it('a zone bias makes the pitcher throw more strikes', () => {
+    const rate = (bias: number) => {
+      const rng = new Rng(21);
+      let n = 0;
+      for (let i = 0; i < 600; i++) if (isStrike(planCpuPitch(pitcher, { balls: 0, strikes: 1 }, 'R', rng, bias).spec.plateLoc)) n++;
+      return n / 600;
+    };
+    expect(rate(0.2)).toBeGreaterThan(rate(0) + 0.1);
+  });
 });

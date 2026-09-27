@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { INCH } from '../src/core/constants';
+import { DIFFICULTIES, INCH } from '../src/core/constants';
 import { Rng } from '../src/core/rng';
 import { evaluateSwing, type SwingContext } from '../src/sim/swing';
+
+const ROOKIE = {
+  timingScale: DIFFICULTIES.rookie.timingScale,
+  pciScale: DIFFICULTIES.rookie.pciScale,
+  contactAssist: DIFFICULTIES.rookie.contactAssist,
+};
 
 const ctx = (over: Partial<SwingContext> = {}): SwingContext => ({
   ballLoc: { x: 0, y: 2.5 },
@@ -64,13 +70,45 @@ describe('swing contact model', () => {
   });
 
   it('easier difficulty widens the timing window', () => {
-    const hard = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -130 }, ctx(), new Rng(9));
+    const hard = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -170 }, ctx(), new Rng(9));
     const easy = evaluateSwing(
-      { type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -130 },
-      ctx({ params: { timingScale: 1.6, pciScale: 1.3 } }),
+      { type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -170 },
+      ctx({ params: ROOKIE }),
       new Rng(9),
     );
     expect(hard.kind).toBe('whiff');
     expect(easy.kind).not.toBe('whiff');
+  });
+
+  it('contact assist turns a near miss into contact', () => {
+    const edge = { x: 0.85, y: 2.5 }; // ball 10+ inches outside the PCI center
+    const plain = evaluateSwing({ type: 'normal', pci: edge, timingErrorMs: 0 }, ctx({ params: { timingScale: 1, pciScale: 1 } }), new Rng(10));
+    const assisted = evaluateSwing(
+      { type: 'normal', pci: edge, timingErrorMs: 0 },
+      ctx({ params: { timingScale: 1, pciScale: 1, contactAssist: 0.4 } }),
+      new Rng(10),
+    );
+    expect(plain.kind).toBe('whiff');
+    expect(assisted.kind).toBe('contact');
+  });
+
+  it('on Rookie a swing 120 ms late is still fair contact', () => {
+    for (let seed = 0; seed < 20; seed++) {
+      const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: 120 }, ctx({ params: ROOKIE }), new Rng(seed));
+      expect(r.kind).toBe('contact');
+      if (r.kind === 'contact') expect(Math.abs(r.sprayDeg)).toBeLessThan(45);
+    }
+  });
+
+  it('spray at the edge of the OK window stays fair on every difficulty', () => {
+    for (const d of Object.values(DIFFICULTIES)) {
+      const params = { timingScale: d.timingScale, pciScale: d.pciScale };
+      const ok = 95 * d.timingScale;
+      for (const dt of [-ok, ok]) {
+        const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: dt }, ctx({ params }), new Rng(11));
+        expect(r.kind).toBe('contact');
+        if (r.kind === 'contact') expect(Math.abs(r.sprayDeg)).toBeLessThan(45);
+      }
+    }
   });
 });

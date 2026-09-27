@@ -232,6 +232,62 @@ body {
   font-size: clamp(40px, 8vw, 72px);
 }
 
+.timing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tm-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.tm-bar {
+  position: relative;
+  width: min(260px, 50vw);
+  height: 12px;
+  border-radius: 6px;
+  background: rgba(255, 107, 94, 0.45);
+  overflow: hidden;
+}
+
+.tm-zones i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.tm-zones .z-whiff {
+  background: rgba(255, 170, 90, 0.55);
+}
+
+.tm-zones .z-ok {
+  background: rgba(255, 216, 74, 0.75);
+}
+
+.tm-zones .z-good {
+  background: rgba(150, 230, 120, 0.85);
+}
+
+.tm-zones .z-perfect {
+  background: var(--good);
+}
+
+.tm-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 4px;
+  margin-left: -2px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
 .pitchmenu {
   position: absolute;
   left: 16px;

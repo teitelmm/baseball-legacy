@@ -23,7 +23,7 @@ import { classifyBattedBall, type BallInPlayOutcome } from '../sim/outcome';
 import { effortBonusMph, missInches, PitchMeter, powerSpeedFactor } from '../sim/pitchMeter';
 import { buildPitch, positionAt, timeAtZ, type PitchSpec, type PitchTrajectory } from '../sim/pitchPhysics';
 import { maxVelocity, movementScale, PITCH_ORDER, PITCH_TYPES } from '../sim/pitchTypes';
-import { evaluateSwing, pciSize, type SwingParams, type SwingResult } from '../sim/swing';
+import { evaluateSwing, pciSize, timingWindows, type SwingParams, type SwingResult } from '../sim/swing';
 import { isStrike } from '../sim/zone';
 import {
   BATTER_STANCE,
@@ -93,6 +93,10 @@ interface PitchInFlight {
   releaseAt: number;
   arrivalAt: number;
   catchAt: number;
+  /** When a take is called: late enough that a late swing can still register. */
+  callAt: number;
+  /** Mitt pop already played. */
+  caught: boolean;
   swing: SwingRecord | null;
   /** Set once the CPU batter has made its decision. */
   cpuDecided: boolean;
@@ -109,7 +113,12 @@ function swingParams(d: Difficulty): SwingParams {
   return {
     timingScale: tuning.timingScaleOverride || d.timingScale,
     pciScale: tuning.pciScaleOverride || d.pciScale,
+    contactAssist: tuning.contactAssistOverride >= 0 ? tuning.contactAssistOverride : d.contactAssist,
   };
+}
+
+function pitchGuideOn(d: Difficulty): boolean {
+  return tuning.pitchGuide === 'auto' ? d.pitchGuide : tuning.pitchGuide === 'on';
 }
 
 export class PracticeSession {
@@ -146,6 +155,8 @@ export class PracticeSession {
   private lastEvent = '';
   /** Test hook: automatically swing (batting) or pitch (pitching). */
   auto = false;
+  /** Test hook: how late (ms) the automatic swing is. */
+  autoTimingMs = 0;
 
   constructor(
     opts: SessionOptions,
@@ -170,7 +181,11 @@ export class PracticeSession {
       ? {
           name: 'CPU Pitcher',
           throws: pitcherHand,
-          ratings: { velocity: cpuRating, control: cpuRating, movement: cpuRating },
+          ratings: {
+            velocity: tuning.cpuRatingOverride || this.difficulty.cpuPitcherStuff,
+            control: cpuRating,
+            movement: tuning.cpuRatingOverride || this.difficulty.cpuPitcherStuff,
+          },
           repertoire: this.cpuRepertoire(),
         }
       : { name: 'You', throws: pitcherHand, ratings: { ...tuning.userPitcher }, repertoire: [...PITCH_ORDER] };
@@ -392,7 +407,12 @@ export class PracticeSession {
     const releaseAt = now + WINDUP_DURATION * 1000;
     const arrivalAt = releaseAt + traj.flightTime * 1000;
     const catchAt = releaseAt + timeAtZ(traj, CATCHER_Z) * 1000;
-    this.pitch = { traj, target, windupAt: now, releaseAt, arrivalAt, catchAt, swing: null, cpuDecided: false };
+    // A human batter can still swing a little after the ball passes (late contact).
+    const lateGrace = this.isUserBatting()
+      ? Math.max(0, timingWindows('normal', swingParams(this.difficulty)).whiff - SWING_TIME_MS + tuning.timingOffsetMs)
+      : 0;
+    const callAt = Math.max(catchAt, arrivalAt + lateGrace);
+    this.pitch = { traj, target, windupAt: now, releaseAt, arrivalAt, catchAt, callAt, caught: false, swing: null, cpuDecided: false };
     this.phase = 'windup';
     this.phaseAt = now;
     this.hud.setPitchMenu(null, null);
@@ -401,7 +421,7 @@ export class PracticeSession {
   }
 
   private cpuPitch(now: number): void {
-    const plan = planCpuPitch(this.pitcher, this.state.count, this.batter.bats, this.rng);
+    const plan = planCpuPitch(this.pitcher, this.state.count, this.batter.bats, this.rng, this.difficulty.cpuZoneBias);
     this.startPitch(now, plan.spec, plan.target);
   }
 
@@ -431,8 +451,8 @@ export class PracticeSession {
   private userSwing(t: number, type: SwingType): void {
     const p = this.pitch;
     if (!p || p.swing) return;
-    if (t > p.catchAt) return;
-    const timingErrorMs = t + SWING_TIME_MS - p.arrivalAt;
+    if (t > p.callAt) return;
+    const timingErrorMs = t + SWING_TIME_MS - p.arrivalAt - tuning.timingOffsetMs;
     const result = evaluateSwing(
       { type, pci: { ...this.pciLoc }, timingErrorMs },
       {
@@ -446,6 +466,7 @@ export class PracticeSession {
       this.rng,
     );
     this.recordSwing(t, type, { ...this.pciLoc }, result);
+    this.zone.flashPci();
   }
 
   private recordSwing(at: number, type: SwingType, pci: PlateLoc, result: SwingResult): void {
@@ -480,7 +501,7 @@ export class PracticeSession {
   private resolveAtPlate(now: number): void {
     const p = this.pitch!;
     const s = p.swing;
-    if (!s || s.at > p.arrivalAt) return;
+    if (!s) return;
     const r = s.result;
     if (r.kind === 'whiff') return;
     let ev: number;
@@ -542,6 +563,8 @@ export class PracticeSession {
     const extra = [runs ? `${runs} run${runs > 1 ? 's' : ''} score${runs > 1 ? '' : 's'}` : '', inningOver ? 'Side retired' : '']
       .filter(Boolean)
       .join(' · ');
+    if (batting && s) this.hud.setTiming(s.result.timingErrorMs, timingWindows(s.type, swingParams(this.difficulty)));
+    else this.hud.setTiming(null);
     const timing = (ms: number, label: string) => (tuning.showTimingMs ? `${label} (${ms > 0 ? '+' : ''}${ms.toFixed(0)} ms)` : label);
 
     if (ev.type === 'inPlay' && s && s.result.kind === 'contact' && this.inPlay) {
@@ -623,15 +646,34 @@ export class PracticeSession {
 
   update(now: number, dt: number): void {
     this.zone.setZoneVisible(tuning.showZone);
-    this.ball.showTrail = tuning.showTrail;
+    const guide = this.isUserBatting() && pitchGuideOn(this.difficulty);
+    this.ball.showTrail = tuning.showTrail || guide;
+    this.ball.boost = this.isUserBatting() && this.phase !== 'inPlay' ? 1.8 : 1;
+    this.ball.setGlow(this.isUserBatting() && (this.phase === 'windup' || this.phase === 'flight'));
+    this.zone.update(dt);
 
     // PCI / aim follow the mouse.
     const loc = this.input.plateLoc(this.cam.camera);
     const aiming = this.phase === 'prePitch' || this.phase === 'windup' || this.phase === 'flight';
     if (this.isUserBatting()) {
-      if (loc) this.pciLoc = { x: THREE.MathUtils.clamp(loc.x, -1.8, 1.8), y: THREE.MathUtils.clamp(loc.y, 0.8, 4.4) };
-      this.zone.pci.visible = aiming;
-      this.zone.setPci(this.pciLoc);
+      const swing = this.pitch?.swing;
+      if (loc && !swing) {
+        // Glide toward the mouse so the PCI doesn't jitter.
+        const k = 1 - Math.exp(-dt / 0.025);
+        const tx = THREE.MathUtils.clamp(loc.x, -1.8, 1.8);
+        const ty = THREE.MathUtils.clamp(loc.y, 0.8, 4.4);
+        this.pciLoc = { x: this.pciLoc.x + (tx - this.pciLoc.x) * k, y: this.pciLoc.y + (ty - this.pciLoc.y) * k };
+      }
+      // After a swing the PCI freezes where it was, next to where the ball crossed.
+      const snapshot = !!swing && !this.inPlay && (this.phase === 'result' || now >= (this.pitch?.arrivalAt ?? Infinity));
+      this.zone.pci.visible = aiming || snapshot;
+      this.zone.setPci(swing ? swing.pci : this.pciLoc);
+      this.zone.setBallMark(snapshot && this.pitch ? this.pitch.traj.spec.plateLoc : null);
+      const p = this.pitch;
+      this.zone.setGuide(
+        guide && p && this.phase === 'flight' ? p.traj.spec.plateLoc : null,
+        p ? (now - p.releaseAt) / (p.arrivalAt - p.releaseAt) : 0,
+      );
       this.zone.reticle.visible = false;
     } else {
       if (loc && this.phase === 'prePitch' && this.meter?.phase === 'idle') {
@@ -714,7 +756,7 @@ export class PracticeSession {
     if (this.auto && this.isUserBatting() && !p.swing && now >= p.arrivalAt - SWING_TIME_MS - 5) {
       // Test hook: perfect swing at the ball.
       this.pciLoc = { ...p.traj.spec.plateLoc };
-      this.userSwing(p.arrivalAt - SWING_TIME_MS + this.rng.gaussian(0, 10), 'normal');
+      this.userSwing(p.arrivalAt - SWING_TIME_MS + this.autoTimingMs + this.rng.gaussian(0, 10), 'normal');
     }
 
     if (now < p.releaseAt) {
@@ -739,14 +781,21 @@ export class PracticeSession {
     const pos = positionAt(p.traj, (t - p.releaseAt) / 1000);
     this.ball.set(pos, (now - p.releaseAt) * 0.1);
 
-    if (now >= p.arrivalAt && p.swing && p.swing.result.kind !== 'whiff' && p.swing.at <= p.arrivalAt) {
-      this.resolveAtPlate(p.arrivalAt);
+    const s = p.swing;
+    if (s && s.result.kind !== 'whiff') {
+      // Contact happens when the bat gets there (never before the ball does).
+      const hitAt = p.arrivalAt + Math.max(0, s.result.timingErrorMs);
+      if (now >= hitAt) this.resolveAtPlate(hitAt);
       return;
     }
 
-    if (now >= p.catchAt) {
+    if (now >= p.catchAt && !p.caught) {
+      p.caught = true;
       this.sfx.mittPop(p.traj.spec.speedMph);
-      const swung = p.swing && p.swing.at <= p.catchAt;
+    }
+
+    if (now >= p.callAt) {
+      const swung = !!p.swing;
       let ev: PitchEvent;
       let call: string;
       if (swung) {

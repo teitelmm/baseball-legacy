@@ -79,6 +79,23 @@ try {
   check(bat.batting.pa >= 5, 'batting: plate appearances complete');
   check(bat.batting.maxEv > 60, 'batting: auto-swings make contact');
 
+  // --- Rookie: a swing clicked 60 ms after the ball crosses the plate still connects ---
+  await page.evaluate(() => window.__game.start({ role: 'batting', difficulty: 'rookie', userHand: 'R', cpuHand: 'R' }));
+  await page.evaluate(() => window.__game.setPlateLoc(0.2, 2.4));
+  await page.evaluate((s) => window.__game.setTimeScale(s), slow);
+  // SWING_TIME is 90 ms, so a timing error of +150 ms means clicking 60 ms after the ball arrives.
+  await page.evaluate(() => window.__game.setAuto(true, 150));
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 60000 });
+  await page.screenshot({ path: `${OUT}/05b-rookie-guide.png` });
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'result', null, { timeout: 60000 });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: `${OUT}/05c-rookie-result.png` });
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await page.waitForFunction(() => window.__game.snapshot().batting.pa >= 3, null, { timeout: 180000 });
+  const rookie = await page.evaluate(() => window.__game.snapshot());
+  console.log('rookie late-swing snapshot', JSON.stringify(rookie));
+  check(rookie.batting.maxEv > 40 && rookie.batting.k === 0, 'rookie: late swings still make contact');
+
   // --- Pitching practice ---
   await page.evaluate(() => window.__game.start({ role: 'pitching', difficulty: 'pro', userHand: 'R', cpuHand: 'S' }));
   await page.evaluate(() => window.__game.setPlateLoc(0.3, 2.2));

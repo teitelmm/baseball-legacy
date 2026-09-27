@@ -16,6 +16,9 @@ export function createDebugPanel(onChange: (key: string) => void): GUI {
   const diff = gui.addFolder('Difficulty overrides (0 = preset)');
   diff.add(tuning, 'timingScaleOverride', 0, 3, 0.05).name('Timing window ×');
   diff.add(tuning, 'pciScaleOverride', 0, 2, 0.05).name('PCI size ×').onChange(() => onChange('pci'));
+  diff.add(tuning, 'contactAssistOverride', -1, 1, 0.05).name('Contact assist (-1 = preset)');
+  diff.add(tuning, 'pitchGuide', ['auto', 'on', 'off']).name('Pitch guide');
+  diff.add(tuning, 'timingOffsetMs', -80, 80, 1).name('Timing offset (ms)');
   diff.add(tuning, 'cpuRatingOverride', 0, 99, 1).name('CPU rating (next session)');
 
   const bat = gui.addFolder('Your batter');

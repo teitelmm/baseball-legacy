@@ -45,6 +45,9 @@ export class Hud {
   private hintEl: HTMLElement;
   private matchup: HTMLElement;
   private fbTimer = 0;
+  private timingEl: HTMLElement;
+  private timingTick: HTMLElement;
+  private timingZones: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.root = el('div', 'hud', parent);
@@ -55,6 +58,13 @@ export class Hud {
     this.fb = el('div', 'feedback', this.root);
     this.fbTitle = el('div', 'fb-title', this.fb);
     this.fbDetail = el('div', 'fb-detail', this.fb);
+    this.timingEl = el('div', 'timing', this.fb);
+    el('span', 'tm-label', this.timingEl).textContent = 'EARLY';
+    const bar = el('div', 'tm-bar', this.timingEl);
+    this.timingZones = el('div', 'tm-zones', bar);
+    this.timingTick = el('div', 'tm-tick', bar);
+    el('span', 'tm-label', this.timingEl).textContent = 'LATE';
+    this.timingEl.style.display = 'none';
     this.pitchMenu = el('div', 'pitchmenu', this.root);
     this.meterEl = el('div', 'meter', this.root);
     const track = el('div', 'meter-track', this.meterEl);
@@ -137,6 +147,23 @@ export class Hud {
     this.fb.className = `feedback show ${tone}`;
     window.clearTimeout(this.fbTimer);
     this.fbTimer = window.setTimeout(() => (this.fb.className = `feedback ${tone}`), ms);
+  }
+
+  /**
+   * Show where a swing landed on an Early / Perfect / Late bar. Pass null to hide.
+   * Windows are the half-widths in ms for the current difficulty.
+   */
+  setTiming(dtMs: number | null, w?: { perfect: number; good: number; ok: number; whiff: number }): void {
+    if (dtMs === null || !w) {
+      this.timingEl.style.display = 'none';
+      return;
+    }
+    this.timingEl.style.display = '';
+    const span = w.whiff * 1.15;
+    const pct = (ms: number) => 50 + (ms / span) * 50;
+    const band = (half: number, cls: string) => `<i class="${cls}" style="left:${pct(-half)}%;width:${pct(half) - pct(-half)}%"></i>`;
+    this.timingZones.innerHTML = band(w.whiff, 'z-whiff') + band(w.ok, 'z-ok') + band(w.good, 'z-good') + band(w.perfect, 'z-perfect');
+    this.timingTick.style.left = `${Math.min(100, Math.max(0, pct(dtMs)))}%`;
   }
 
   clearFeedback(): void {
