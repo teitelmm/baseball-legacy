@@ -1,4 +1,6 @@
 :root {
+  /* The game commits to one dark broadcast look over the 3D scene. */
+  color-scheme: dark;
   --panel: rgba(12, 18, 30, 0.78);
   --panel-border: rgba(255, 255, 255, 0.12);
   --text: #f3f5f8;
@@ -12,15 +14,8 @@
   --menu-bg: #0b1320;
   --card: #152238;
   --card-hover: #1d2f4d;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --panel: rgba(12, 18, 30, 0.78);
-  }
-}
-:root[data-theme='dark'] {
-  --panel: rgba(12, 18, 30, 0.78);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 * {
@@ -32,7 +27,7 @@ body {
   margin: 0;
   height: 100%;
   overflow: hidden;
-  background: #0b1320;
+  background: var(--menu-bg);
   color: var(--text);
   font-family: 'Barlow Semi Condensed', 'Arial Narrow', system-ui, sans-serif;
   -webkit-user-select: none;
@@ -75,7 +70,7 @@ body {
 }
 
 .scorebug {
-  top: 16px;
+  top: calc(16px + var(--safe-top));
   left: 16px;
   display: flex;
   align-items: center;
@@ -123,7 +118,7 @@ body {
 }
 
 .matchup {
-  top: 92px;
+  top: calc(92px + var(--safe-top));
   left: 16px;
   font-size: 15px;
   font-weight: 600;
@@ -132,7 +127,7 @@ body {
 }
 
 .stats {
-  top: 16px;
+  top: calc(16px + var(--safe-top));
   right: 16px;
   min-width: 170px;
 }
@@ -162,7 +157,7 @@ body {
 
 .pitchlog {
   right: 16px;
-  bottom: 16px;
+  bottom: calc(16px + var(--safe-bottom));
   min-width: 250px;
   font-size: 14px;
 }
@@ -240,7 +235,7 @@ body {
 .pitchmenu {
   position: absolute;
   left: 16px;
-  bottom: 16px;
+  bottom: calc(16px + var(--safe-bottom));
   display: grid;
   gap: 6px;
   pointer-events: auto;
@@ -353,7 +348,7 @@ body {
 .hint {
   position: absolute;
   left: 50%;
-  bottom: 14px;
+  bottom: calc(14px + var(--safe-bottom));
   transform: translateX(-50%);
   font-size: 14px;
   color: #dfe5ee;
@@ -379,7 +374,7 @@ body {
   justify-content: center;
   background: radial-gradient(ellipse at top, rgba(20, 40, 70, 0.75), rgba(5, 9, 16, 0.92));
   z-index: 10;
-  padding: 16px;
+  padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
   overflow-y: auto;
 }
 
