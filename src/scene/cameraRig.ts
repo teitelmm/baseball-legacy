@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RUBBER_Z } from '../core/constants';
 import type { Handedness, Vec3 } from '../core/types';
 
-export type CameraMode = 'batting' | 'pitching' | 'follow';
+export type CameraMode = 'batting' | 'pitching' | 'follow' | 'custom';
 
 interface Shot {
   pos: THREE.Vector3;
@@ -63,6 +63,12 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Continuously steered shot (e.g. behind a fielder). Call every frame. */
+  steer(pos: THREE.Vector3, look: THREE.Vector3, fov: number): void {
+    if (this.mode !== 'custom') this.setShot('custom', { pos, look, fov });
+    else this.target = { pos, look, fov };
+  }
+
   follow(ball: Vec3): void {
     this.followTarget.set(ball.x, ball.y, ball.z);
   }
@@ -88,7 +94,7 @@ export class CameraRig {
       };
       this.applyShot(s);
     } else {
-      if (this.mode === 'follow') {
+      if (this.mode === 'follow' || this.mode === 'custom') {
         // Ease the look target so fast balls don't jerk the camera.
         const s = { ...shot, look: this.look.clone().lerp(shot.look, Math.min(1, dt * 10)) };
         this.applyShot(s);

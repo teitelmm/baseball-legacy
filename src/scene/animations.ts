@@ -241,3 +241,62 @@ export function fielderReadyPose(phase: number): Pose {
     footYawL: -0.3,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Running, fielding and throwing
+
+/** Run cycle. `phase` advances with distance run; `amt` 0..1 is how hard he's running. */
+export function runPose(phase: number, amt: number): Pose {
+  const s = Math.sin(phase);
+  const c = Math.cos(phase);
+  return {
+    pelvis: [0, 2.95 + Math.abs(c) * 0.12 * amt, 0],
+    pelvisRot: [0.1 * amt, s * 0.1 * amt, 0],
+    chestRot: [0.25 * amt, -s * 0.2 * amt, 0],
+    footR: [-0.36, 0.2 + Math.max(0, s) * 0.9 * amt, s * 1.35 * amt],
+    footL: [0.36, 0.2 + Math.max(0, -s) * 0.9 * amt, -s * 1.35 * amt],
+    handR: [-0.85, 3.7, 0.35 - s * 1.0 * amt],
+    handL: [0.85, 3.7, 0.35 + s * 1.0 * amt],
+  };
+}
+
+/** Reaching for the ball with the glove (left) hand at a given height. */
+export function catchPose(height: number): Pose {
+  const h = Math.max(0.6, Math.min(6.5, height));
+  return {
+    pelvis: [0, h < 2 ? 2.3 : 2.9, 0],
+    pelvisRot: [h < 2 ? 0.4 : 0.1, 0, 0],
+    chestRot: [h < 2 ? 0.5 : 0.1, 0, 0],
+    footR: [-0.8, 0.2, -0.1],
+    footL: [0.8, 0.2, 0.2],
+    handR: [-0.3, h, 1.3],
+    handL: [0.3, h, 1.4],
+  };
+}
+
+/** Throwing motion, t 0..1 (release around 0.55). */
+export function throwPose(t: number): Pose {
+  const k = Math.min(1, Math.max(0, t));
+  const cock = Math.min(1, k / 0.5);
+  const fire = Math.max(0, (k - 0.5) / 0.5);
+  return {
+    pelvis: [0, 2.9, 0.4 * fire],
+    pelvisRot: [0.2 * fire, -0.7 * (1 - fire) + 0.4 * fire, 0],
+    chestRot: [0.5 * fire, -0.6 * (1 - fire) + 0.6 * fire, 0],
+    footR: [-0.5, 0.2, -0.6],
+    footL: [0.5, 0.2, 1.2],
+    handR: [-1.3 + 1.8 * fire, 5.0 - 2.2 * fire, -1.2 * cock * (1 - fire) + 2.2 * fire],
+    handL: [0.9, 4.2 - fire, 1.2 - fire],
+  };
+}
+
+/** Runner leading off a base. */
+export const LEADOFF_POSE: Pose = {
+  pelvis: [0, 2.7, 0],
+  pelvisRot: [0.2, 0, 0],
+  chestRot: [0.35, 0, 0],
+  handR: [-0.9, 2.6, 0.6],
+  handL: [0.9, 2.6, 0.6],
+  footR: [-1.2, 0.2, 0],
+  footL: [1.2, 0.2, 0],
+};

@@ -79,6 +79,44 @@ body {
   font-weight: 700;
 }
 
+.sb-teams {
+  display: grid;
+  gap: 2px;
+  font-size: 17px;
+}
+
+.sb-teams div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 78px;
+  color: var(--muted);
+}
+
+.sb-teams div.bat {
+  color: var(--text);
+}
+
+.sb-teams b {
+  font-variant-numeric: tabular-nums;
+}
+
+.stamina {
+  display: inline-block;
+  width: 70px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.stamina i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(to right, var(--bad), var(--accent), var(--good));
+}
+
 .sb-bases rect {
   fill: transparent;
   stroke: #cfd6e2;
@@ -286,6 +324,25 @@ body {
   margin-left: -2px;
   background: #fff;
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+}
+
+.flash {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, 6px);
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgba(8, 12, 20, 0.7);
+  font-size: 20px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.flash.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .pitchmenu {
@@ -610,5 +667,203 @@ body {
     white-space: normal;
     width: calc(100% - 32px);
     text-align: center;
+  }
+}
+
+/* Stage 2: game setup, recap and box score */
+
+.mode-card.feature {
+  border-color: var(--accent);
+  background: linear-gradient(160deg, #1d3157, var(--card));
+}
+
+.mode-card.feature h2 {
+  color: var(--accent);
+}
+
+.setup-title {
+  margin: 0 0 4px;
+  font-size: 28px;
+}
+
+.pos-blurb {
+  color: var(--muted);
+  font-size: 16px;
+  margin: 14px 0 0;
+  min-height: 1.4em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.overlay button.big {
+  padding: 12px 22px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.overlay button.big:hover,
+.overlay button.big:focus-visible {
+  background: var(--card-hover);
+  outline: none;
+}
+
+.overlay button.big.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1400;
+}
+
+.overlay button.big.primary:hover {
+  background: #ffe27a;
+}
+
+.overlay button.big kbd {
+  font: inherit;
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 6px;
+}
+
+.game-screen .menu {
+  width: min(820px, 100%);
+}
+
+.recap h1,
+.boxscore h1 {
+  font-size: clamp(32px, 6vw, 52px);
+}
+
+.matchup-line {
+  margin: 4px 0 16px;
+  color: #dfe5ee;
+  font-size: 17px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.game-screen table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+  font-size: 15px;
+}
+
+.game-screen th,
+.game-screen td {
+  padding: 4px 8px;
+  text-align: center;
+}
+
+.game-screen tbody th {
+  text-align: left;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.game-screen thead th {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.game-screen tr.you th,
+.game-screen tr.you td {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.linescore {
+  background: var(--card);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.linescore .tot {
+  font-weight: 800;
+  border-left: 1px solid var(--panel-border);
+}
+
+.pbp {
+  margin-top: 16px;
+}
+
+.pbp h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.pbp ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: min(38vh, 320px);
+  overflow-y: auto;
+  display: grid;
+  gap: 3px;
+  font-size: 15px;
+}
+
+.pbp li {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: 6px;
+  color: #d5dce7;
+}
+
+.pbp li.scoring {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.pbp .inn {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.box-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.box caption {
+  text-align: left;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  font-weight: 700;
+  padding-bottom: 4px;
+}
+
+.box .pos {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .box-grid {
+    grid-template-columns: 1fr;
   }
 }

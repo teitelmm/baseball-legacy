@@ -12,6 +12,24 @@ export interface PitchMenuItem {
   color: string;
 }
 
+export interface GameHudInfo {
+  awayAbbr: string;
+  homeAbbr: string;
+  awayRuns: number;
+  homeRuns: number;
+  inning: number;
+  half: 'top' | 'bottom';
+  outs: number;
+  count: { balls: number; strikes: number };
+  bases: GameState['bases'];
+  userName: string;
+  userPos: string;
+  userLine: string;
+  /** 0..1 when you're pitching, else null. */
+  stamina: number | null;
+  pitches: number;
+}
+
 export interface PitchLogEntry {
   n: number;
   name: string;
@@ -45,6 +63,8 @@ export class Hud {
   private hintEl: HTMLElement;
   private matchup: HTMLElement;
   private fbTimer = 0;
+  private flashEl: HTMLElement;
+  private flashTimer = 0;
   private timingEl: HTMLElement;
   private timingTick: HTMLElement;
   private timingZones: HTMLElement;
@@ -65,6 +85,7 @@ export class Hud {
     this.timingTick = el('div', 'tm-tick', bar);
     el('span', 'tm-label', this.timingEl).textContent = 'LATE';
     this.timingEl.style.display = 'none';
+    this.flashEl = el('div', 'flash', this.root);
     this.pitchMenu = el('div', 'pitchmenu', this.root);
     this.meterEl = el('div', 'meter', this.root);
     const track = el('div', 'meter-track', this.meterEl);
@@ -89,10 +110,10 @@ export class Hud {
     this.root.style.display = 'none';
   }
 
-  update(s: GameState, role: 'batting' | 'pitching'): void {
-    const b = s.bases;
-    this.scorebug.innerHTML = `
-      <div class="sb-inning"><span class="lbl">INN</span>${s.inning}</div>
+  private scorebugHtml(bases: GameState['bases'], count: { balls: number; strikes: number }, outs: number, left: string, right: string): string {
+    const b = bases;
+    return `
+      ${left}
       <div class="sb-bases">
         <svg viewBox="0 0 40 30" width="44" height="33">
           <rect x="16" y="2" width="9" height="9" transform="rotate(45 20.5 6.5)" class="${b[1] ? 'on' : ''}"/>
@@ -101,11 +122,41 @@ export class Hud {
         </svg>
       </div>
       <div class="sb-count">
-        <div><span class="lbl">B</span>${dots(s.count.balls, 3, 'ball')}</div>
-        <div><span class="lbl">S</span>${dots(s.count.strikes, 2, 'strike')}</div>
-        <div><span class="lbl">O</span>${dots(Math.min(s.outs, 2), 2, 'out')}</div>
+        <div><span class="lbl">B</span>${dots(count.balls, 3, 'ball')}</div>
+        <div><span class="lbl">S</span>${dots(count.strikes, 2, 'strike')}</div>
+        <div><span class="lbl">O</span>${dots(Math.min(outs, 2), 2, 'out')}</div>
       </div>
-      <div class="sb-runs"><span class="lbl">RUNS</span>${s.runs}</div>`;
+      ${right}`;
+  }
+
+  /** Scorebug + your line during a real game. */
+  updateGame(g: GameHudInfo): void {
+    const left = `<div class="sb-teams">
+        <div class="${g.half === 'top' ? 'bat' : ''}"><span>${g.awayAbbr}</span><b>${g.awayRuns}</b></div>
+        <div class="${g.half === 'bottom' ? 'bat' : ''}"><span>${g.homeAbbr}</span><b>${g.homeRuns}</b></div>
+      </div>
+      <div class="sb-inning">${g.half === 'top' ? '▲' : '▼'}${g.inning}</div>`;
+    this.scorebug.innerHTML = this.scorebugHtml(g.bases, g.count, g.outs, left, '');
+    const stamina =
+      g.stamina === null
+        ? ''
+        : `<span>STAMINA</span><b><i class="stamina"><i style="width:${Math.round(g.stamina * 100)}%"></i></i></b><span>PITCHES</span><b>${g.pitches}</b>`;
+    this.stats.innerHTML = `
+      <div class="st-title">${g.userName.toUpperCase()} · ${g.userPos}</div>
+      <div class="st-grid">
+        <span>TODAY</span><b>${g.userLine || '—'}</b>
+        ${stamina}
+      </div>`;
+  }
+
+  update(s: GameState, role: 'batting' | 'pitching'): void {
+    this.scorebug.innerHTML = this.scorebugHtml(
+      s.bases,
+      s.count,
+      s.outs,
+      `<div class="sb-inning"><span class="lbl">INN</span>${s.inning}</div>`,
+      `<div class="sb-runs"><span class="lbl">RUNS</span>${s.runs}</div>`,
+    );
 
     if (role === 'batting') {
       const l = s.batting;
@@ -164,6 +215,14 @@ export class Hud {
     const band = (half: number, cls: string) => `<i class="${cls}" style="left:${pct(-half)}%;width:${pct(half) - pct(-half)}%"></i>`;
     this.timingZones.innerHTML = band(w.whiff, 'z-whiff') + band(w.ok, 'z-ok') + band(w.good, 'z-good') + band(w.perfect, 'z-perfect');
     this.timingTick.style.left = `${Math.min(100, Math.max(0, pct(dtMs)))}%`;
+  }
+
+  /** Short call-out during a play ("Out at first", "Scores!"). */
+  flash(text: string): void {
+    this.flashEl.textContent = text;
+    this.flashEl.classList.add('show');
+    window.clearTimeout(this.flashTimer);
+    this.flashTimer = window.setTimeout(() => this.flashEl.classList.remove('show'), 1400);
   }
 
   clearFeedback(): void {

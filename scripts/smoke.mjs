@@ -68,7 +68,8 @@ try {
   await page.waitForFunction(() => window.__game.snapshot().phase === 'inPlay', null, { timeout: 60000 });
   await page.waitForTimeout(1500);
   await page.screenshot({ path: `${OUT}/04-ball-in-play.png` });
-  await page.waitForFunction(() => window.__game.snapshot().phase === 'result', null, { timeout: 60000 });
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'result', null, { timeout: 90000 });
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${OUT}/05-result.png` });
 
@@ -87,7 +88,8 @@ try {
   await page.evaluate(() => window.__game.setAuto(true, 150));
   await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 60000 });
   await page.screenshot({ path: `${OUT}/05b-rookie-guide.png` });
-  await page.waitForFunction(() => window.__game.snapshot().phase === 'result', null, { timeout: 60000 });
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'result', null, { timeout: 90000 });
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${OUT}/05c-rookie-result.png` });
   await page.evaluate(() => window.__game.setTimeScale(1));
@@ -125,6 +127,62 @@ try {
   check(pit.pitching.pitches >= 25, 'pitching: pitches thrown');
   check(pit.pitching.k + pit.pitching.bb + pit.pitching.h + pit.pitching.outs > 0, 'pitching: plate appearances resolve');
   await page.screenshot({ path: `${OUT}/09-pitching-later.png` });
+
+  // --- Full games ---
+  const finalBox = async (name) => {
+    await page.waitForFunction(() => window.__game.snapshot()?.moment === 'final', null, { timeout: 60000 });
+    const g = await page.evaluate(() => window.__game.snapshot());
+    console.log(`${name} final`, JSON.stringify(g));
+    check(g.over && g.score.home !== g.score.away, `${name}: game ends with a winner`);
+    check(g.score.home === g.boxRuns.home && g.score.away === g.boxRuns.away, `${name}: box score matches the line score`);
+    return g;
+  };
+
+  // DH: recap screen, then an at-bat.
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await page.evaluate(() => window.__game.startGame({ role: 'DH', bats: 'R', throws: 'R', difficulty: 'rookie', innings: 3, home: true }));
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap', null, { timeout: 30000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/10-game-recap.png` });
+  await page.evaluate(() => window.__game.setAuto(true));
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'bat', null, { timeout: 60000 });
+  await page.evaluate((s) => window.__game.setTimeScale(s), slow);
+  await page.waitForFunction(() => window.__game.snapshot()?.phase === 'inPlay', null, { timeout: 120000 }).catch(() => {});
+  await page.waitForTimeout(2500);
+  await page.screenshot({ path: `${OUT}/11-game-live-play.png` });
+  await page.evaluate(() => window.__game.setTimeScale(1));
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap', null, { timeout: 120000 });
+  check(true, 'DH: an at-bat played live and returned to the recap');
+  await page.evaluate(() => window.__game.simToEnd());
+  await finalBox('DH');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/12-box-score.png` });
+
+  // P: pitch live until the half inning ends, then sim.
+  await page.evaluate(() => window.__game.startGame({ role: 'P', bats: 'R', throws: 'R', difficulty: 'pro', innings: 3, home: false }));
+  await page.evaluate(() => window.__game.setAuto(true));
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'pitch', null, { timeout: 60000 });
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap' || window.__game.snapshot()?.moment === 'final', null, { timeout: 240000 });
+  check(true, 'P: pitched a live half inning');
+  await page.evaluate(() => window.__game.simToEnd());
+  await finalBox('P');
+
+  // CF: wait for a ball hit to you, field it automatically.
+  await page.evaluate(() => window.__game.startGame({ role: 'CF', bats: 'L', throws: 'R', difficulty: 'pro', innings: 9, home: true, seed: 11 }));
+  await page.evaluate(() => window.__game.setAuto(true));
+  const gotField = await page
+    .waitForFunction(() => window.__game.snapshot()?.moment === 'field', null, { timeout: 400000 })
+    .then(() => true)
+    .catch(() => false);
+  check(gotField, 'CF: a ball was hit your way');
+  if (gotField) {
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: `${OUT}/13-fielding-cam.png` });
+    await page.waitForFunction(() => window.__game.snapshot()?.moment !== 'field', null, { timeout: 120000 });
+    check(true, 'CF: the fielding play finished');
+  }
+  await page.evaluate(() => window.__game.simToEnd());
+  await finalBox('CF');
 
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {

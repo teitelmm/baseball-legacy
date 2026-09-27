@@ -12,11 +12,11 @@ export interface CpuPitchPlan {
 /** Chance the CPU pitcher attacks the zone for a given count. */
 export function zoneRate(count: Count): number {
   const { balls, strikes } = count;
-  if (balls === 3) return 0.85;
-  if (strikes === 2 && balls < 2) return 0.3;
-  if (strikes > balls) return 0.42;
-  if (balls > strikes) return 0.7;
-  return 0.58;
+  if (balls === 3) return 0.68;
+  if (strikes === 2 && balls < 2) return 0.22;
+  if (strikes > balls) return 0.32;
+  if (balls > strikes) return 0.52;
+  return 0.43;
 }
 
 function choosePitch(p: Pitcher, count: Count, rng: Rng): PitchTypeId {

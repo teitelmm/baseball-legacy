@@ -31,16 +31,26 @@ describe('swing contact model', () => {
     expect(r.timingLabel).toBe('Perfect');
   });
 
+  const meanSpray = (dt: number, bats: 'R' | 'L') => {
+    let sum = 0;
+    let n = 0;
+    for (let seed = 0; seed < 60; seed++) {
+      const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: dt }, ctx({ bats }), new Rng(seed));
+      if (r.kind === 'contact') {
+        sum += r.sprayDeg;
+        n++;
+      }
+    }
+    return sum / n;
+  };
+
   it('early swings pull the ball (left field for a righty, right field for a lefty)', () => {
-    const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -50 }, ctx(), new Rng(2));
-    const l = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: -50 }, ctx({ bats: 'L' }), new Rng(2));
-    expect(r.kind === 'contact' && r.sprayDeg < -10).toBe(true);
-    expect(l.kind === 'contact' && l.sprayDeg > 10).toBe(true);
+    expect(meanSpray(-50, 'R')).toBeLessThan(-10);
+    expect(meanSpray(-50, 'L')).toBeGreaterThan(10);
   });
 
   it('late swings go the other way', () => {
-    const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: 50 }, ctx(), new Rng(3));
-    expect(r.kind === 'contact' && r.sprayDeg > 10).toBe(true);
+    expect(meanSpray(50, 'R')).toBeGreaterThan(10);
   });
 
   it('a PCI above the ball tops it into the ground; below the ball lifts it', () => {
@@ -105,9 +115,12 @@ describe('swing contact model', () => {
       const params = { timingScale: d.timingScale, pciScale: d.pciScale };
       const ok = 95 * d.timingScale;
       for (const dt of [-ok, ok]) {
-        const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: dt }, ctx({ params }), new Rng(11));
-        expect(r.kind).toBe('contact');
-        if (r.kind === 'contact') expect(Math.abs(r.sprayDeg)).toBeLessThan(45);
+        let fair = 0;
+        for (let seed = 0; seed < 50; seed++) {
+          const r = evaluateSwing({ type: 'normal', pci: { x: 0, y: 2.5 }, timingErrorMs: dt }, ctx({ params }), new Rng(seed));
+          if (r.kind === 'contact' && Math.abs(r.sprayDeg) < 45) fair++;
+        }
+        expect(fair).toBeGreaterThan(35);
       }
     }
   });

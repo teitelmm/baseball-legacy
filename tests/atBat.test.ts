@@ -1,26 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { advanceOnHit, advanceOnWalk, applyPitch, newGameState, type GameState, type PitchEvent } from '../src/sim/atBat';
+import { advanceOnWalk, applyPitch, newGameState, type GameState, type PitchEvent } from '../src/sim/atBat';
+import type { PlayResult } from '../src/sim/playSim';
 
 const run = (events: PitchEvent[], s: GameState = newGameState()) => {
   let last = { state: s } as ReturnType<typeof applyPitch>;
-  for (const e of events) last = applyPitch(last.state, e);
+  for (const e of events) last = applyPitch(last.state, e, 'B');
   return last;
 };
+
+const play = (p: Partial<PlayResult>): PitchEvent => ({
+  type: 'inPlay',
+  exitVeloMph: 95,
+  play: {
+    kind: 'play',
+    batterResult: 'single',
+    outs: [],
+    scored: [],
+    bases: ['B', null, null],
+    sacFly: false,
+    doublePlay: false,
+    battedBallType: 'line drive',
+    description: 'singles to left',
+    chain: [7],
+    ...p,
+  },
+});
 
 const ball: PitchEvent = { type: 'ball' };
 const strike: PitchEvent = { type: 'calledStrike' };
 const whiff: PitchEvent = { type: 'swingingStrike' };
 const foul: PitchEvent = { type: 'foul' };
-const single: PitchEvent = { type: 'inPlay', exitVeloMph: 95, outcome: { kind: 'hit', hit: 'single', label: 'Single', battedBallType: 'line drive' } };
-const homer: PitchEvent = { type: 'inPlay', exitVeloMph: 108, outcome: { kind: 'hit', hit: 'homeRun', label: 'HR', battedBallType: 'fly ball' } };
-const deepFly: PitchEvent = { type: 'inPlay', exitVeloMph: 98, outcome: { kind: 'out', out: 'flyout', label: 'Fly out', battedBallType: 'fly ball', sacFlyDepth: true } };
 
 describe('at-bat engine', () => {
   it('four balls is a walk', () => {
     const r = run([ball, ball, ball, ball]);
     expect(r.pa).toBe('walk');
-    expect(r.state.bases).toEqual([true, false, false]);
-    expect(r.state.count).toEqual({ balls: 0, strikes: 0 });
+    expect(r.state.bases).toEqual(['B', null, null]);
     expect(r.state.batting.bb).toBe(1);
     expect(r.state.batting.ab).toBe(0);
   });
@@ -42,35 +57,45 @@ describe('at-bat engine', () => {
     const k = [strike, strike, strike];
     const r = run([...k, ...k, ...k]);
     expect(r.inningOver).toBe(true);
-    expect(r.state.outs).toBe(3);
     const next = applyPitch(r.state, ball);
     expect(next.state.inning).toBe(2);
     expect(next.state.outs).toBe(0);
   });
 
   it('walks force runners and a bases-loaded walk scores a run', () => {
-    expect(advanceOnWalk([false, true, false])).toEqual([[true, true, false], 0]);
-    expect(advanceOnWalk([true, false, true])).toEqual([[true, true, true], 0]);
-    expect(advanceOnWalk([true, true, true])).toEqual([[true, true, true], 1]);
+    expect(advanceOnWalk([null, 'A', null], 'B')).toEqual([['B', 'A', null], []]);
+    expect(advanceOnWalk(['A', null, 'C'], 'B')).toEqual([['B', 'A', 'C'], []]);
+    expect(advanceOnWalk(['A', 'X', 'C'], 'B')).toEqual([['B', 'A', 'X'], ['C']]);
   });
 
-  it('hits advance runners and score runs', () => {
-    expect(advanceOnHit([true, true, true], 'single')).toEqual([[true, true, false], 2]);
-    expect(advanceOnHit([true, false, false], 'double')).toEqual([[false, true, true], 0]);
-    expect(advanceOnHit([true, true, true], 'homeRun')).toEqual([[false, false, false], 4]);
-    const r = run([single, single, homer]);
-    expect(r.state.runs).toBe(3);
-    expect(r.state.batting.hr).toBe(1);
-    expect(r.state.batting.rbi).toBe(3);
+  it('applies the play result: bases, runs, hits and RBI', () => {
+    const r = run([play({ batterResult: 'double', bases: [null, 'B', null], scored: ['R1'] })]);
+    expect(r.state.bases).toEqual([null, 'B', null]);
+    expect(r.state.runs).toBe(1);
+    expect(r.state.batting.h).toBe(1);
+    expect(r.state.batting.doubles).toBe(1);
+    expect(r.state.batting.rbi).toBe(1);
+    expect(r.scorers).toEqual(['R1']);
   });
 
-  it('a deep fly with a runner on third and < 2 outs is a sacrifice fly', () => {
-    const s = newGameState();
-    s.bases = [false, false, true];
-    const r = applyPitch(s, deepFly);
-    expect(r.runsScored).toBe(1);
-    expect(r.state.outs).toBe(1);
-    expect(r.state.batting.ab).toBe(0);
-    expect(r.description).toBe('Sacrifice fly');
+  it('a sacrifice fly is not an at-bat and a double play gives no RBI', () => {
+    const sf = run([play({ batterResult: 'out', outs: [{ runnerId: 'B', base: 1, force: false, time: 3 }], scored: ['R3'], sacFly: true, bases: [null, null, null] })]);
+    expect(sf.state.batting.ab).toBe(0);
+    expect(sf.state.batting.rbi).toBe(1);
+    const dp = run([
+      play({
+        batterResult: 'out',
+        doublePlay: true,
+        outs: [
+          { runnerId: 'R1', base: 2, force: true, time: 2 },
+          { runnerId: 'B', base: 1, force: true, time: 3 },
+        ],
+        scored: ['R3'],
+        bases: [null, null, null],
+      }),
+    ]);
+    expect(dp.state.outs).toBe(2);
+    expect(dp.state.batting.rbi).toBe(0);
+    expect(dp.state.runs).toBe(1);
   });
 });

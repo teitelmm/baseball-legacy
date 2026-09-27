@@ -116,21 +116,25 @@ export function evaluateSwing(input: SwingInput, ctx: SwingContext, rng: Rng): S
   const timingQ = absDt <= w.perfect ? 1 : Math.max(0, 1 - (absDt - w.perfect) / (w.whiff - w.perfect));
   const quality = spatialQ * (0.25 + 0.75 * timingQ);
 
-  if (quality < 0.07) {
+  // Weak, mistimed contact mostly gets fouled off (straight back or into the stands).
+  const foulChance = quality < 0.07 ? 1 : Math.max(0, (0.5 - quality) / 0.5) * 0.85;
+  if (rng.chance(foulChance)) {
     return { kind: 'foulTip', timingLabel: tLabel, timingErrorMs: dt };
   }
 
   // Exit velocity.
-  const maxEv = 94 + (ctx.powerRating / 100) * 16 + (input.type === 'power' ? 4 : 0);
+  const maxEv = 97 + (ctx.powerRating / 100) * 16 + (input.type === 'power' ? 4 : 0);
   const pitchBonus = (ctx.pitchSpeedMph - 88) * 0.15;
-  const ev = 38 + (maxEv + pitchBonus - 38) * Math.pow(quality, 0.65) + rng.gaussian(0, 1.5);
+  const ev = 45 + (maxEv + pitchBonus - 45) * Math.pow(quality, 0.5) + rng.gaussian(0, 2);
 
   // Launch angle: the bat under the ball (ball above PCI) lifts it; over the ball tops it.
   const la = 11 + 5.5 * dy + 0.35 * dy * Math.abs(dy) + rng.gaussian(0, 2.5) - (dt > 0 ? (dt / w.ok) * 4 : 0);
 
   // Spray: early pulls, late goes the other way. "Pull" is positive here. It scales with
   // the timing window, so the edge of the "OK" window is still fair on every difficulty.
-  const pull = 3 - (dt / w.ok) * 32 + rng.gaussian(0, 4);
+  // Inside pitches get pulled, outside pitches go the other way.
+  const inside = ctx.bats === 'R' ? -ctx.ballLoc.x : ctx.ballLoc.x;
+  const pull = 4 - (dt / w.ok) * 32 + inside * 22 + rng.gaussian(0, 14);
   const sprayDeg = ctx.bats === 'R' ? -pull : pull;
 
   const contactLabel =

@@ -1,82 +1,64 @@
 import * as THREE from 'three';
-import {
-  CATCHER_Z,
-  DIFFICULTIES,
-  INCH,
-  MOUND_HEIGHT,
-  RUBBER_Z,
-  SWING_TIME_MS,
-  type Difficulty,
-  type DifficultyName,
-} from '../core/constants';
+import { CATCHER_Z, INCH, SWING_TIME_MS, type Difficulty } from '../core/constants';
 import type { GameClock } from '../core/clock';
 import type { Input, ClickEvent } from '../core/input';
-import { Rng } from '../core/rng';
+import type { Rng } from '../core/rng';
 import { tuning } from '../core/tuning';
-import type { Batter, Handedness, Pitcher, PitchTypeId, PlateLoc, SwingType, Vec3 } from '../core/types';
+import type { Batter, Pitcher, PitchTypeId, PlateLoc, SwingType, TeamColors, Vec3 } from '../core/types';
 import type { Sfx } from '../audio/sfx';
-import { applyPitch, newGameState, type GameState, type PitchEvent } from '../sim/atBat';
+import type { GameState, PitchEvent, PitchOutcome } from '../sim/atBat';
 import { decideCpuSwing } from '../sim/ai/cpuBatter';
 import { planCpuPitch } from '../sim/ai/cpuPitcher';
-import { pathPositionAt, simulateBattedBall, type BattedBallPath } from '../sim/battedBall';
-import { classifyBattedBall, type BallInPlayOutcome } from '../sim/outcome';
+import { simulateBattedBall, type BattedBallPath } from '../sim/battedBall';
 import { effortBonusMph, missInches, PitchMeter, powerSpeedFactor } from '../sim/pitchMeter';
 import { buildPitch, positionAt, timeAtZ, type PitchSpec, type PitchTrajectory } from '../sim/pitchPhysics';
-import { maxVelocity, movementScale, PITCH_ORDER, PITCH_TYPES } from '../sim/pitchTypes';
+import { maxVelocity, movementScale, PITCH_TYPES } from '../sim/pitchTypes';
+import type { PlaySetup } from '../sim/playSim';
 import { evaluateSwing, pciSize, timingWindows, type SwingParams, type SwingResult } from '../sim/swing';
 import { isStrike } from '../sim/zone';
-import {
-  BATTER_STANCE,
-  batterLoadKeys,
-  batterSwingKeys,
-  catcherPose,
-  fielderReadyPose,
-  pitcherKeys,
-  pitcherSetPose,
-  SWING_DURATION,
-  UMPIRE_POSE,
-  WINDUP_DURATION,
-} from '../scene/animations';
+import { BATTER_STANCE, batterLoadKeys, batterSwingKeys, catcherPose, pitcherKeys, SWING_DURATION, WINDUP_DURATION } from '../scene/animations';
+import { BATTER_OFFSET, CATCHER_ROOT_Z, FieldActors } from '../scene/actors';
 import { BallView } from '../scene/ballView';
 import type { CameraRig } from '../scene/cameraRig';
-import { Humanoid, samplePose, type Appearance, type Keyframes } from '../scene/humanoid';
+import { samplePose, type Keyframes } from '../scene/humanoid';
 import { ZoneOverlay } from '../scene/zoneOverlay';
 import type { Hud, PitchLogEntry } from '../ui/hud';
+import { LivePlay } from './livePlay';
 
 export type Role = 'batting' | 'pitching';
 export type Phase = 'prePitch' | 'windup' | 'flight' | 'inPlay' | 'result';
 
-export interface SessionOptions {
-  role: Role;
-  difficulty: DifficultyName;
-  /** Your batting side (batting practice) or throwing arm (pitching practice). */
-  userHand: Handedness;
-  /** The CPU opponent's hand. 'S' mixes it up batter to batter. */
-  cpuHand: Handedness | 'S';
-  seed?: number;
+/** Supplies the people and the game state for live at-bats (practice or a real game). */
+export interface AtBatHost {
+  /** What you're doing: batting or pitching. */
+  readonly role: Role;
+  readonly difficulty: Difficulty;
+  readonly rng: Rng;
+  batter(): { id: string; batter: Batter; index: number };
+  pitcher(): Pitcher;
+  state(): GameState;
+  offense(): TeamColors;
+  defense(): TeamColors;
+  playSetup(path: BattedBallPath): PlaySetup;
+  apply(ev: PitchEvent, pitchMph: number): PitchOutcome;
+  refreshHud(hud: Hud): void;
+  nameOf(id: string): string;
+  /** Called after each pitch's result is shown. Return false when the live moment is over. */
+  afterPitch(paEnded: boolean): boolean;
 }
 
-const BATTER_OFFSET = 2.6; // ft from the plate center to the batter's root
-const CATCHER_ROOT_Z = CATCHER_Z + 1.0;
+export interface SessionDeps {
+  scene: THREE.Scene;
+  cam: CameraRig;
+  input: Input;
+  clock: GameClock;
+  hud: Hud;
+  sfx: Sfx;
+}
+
 const PRE_PITCH_MS = 1300;
 const RESULT_MS = 1400;
-const IN_PLAY_RESULT_MS = 2600;
-
-const HOME_TEAM: Appearance = { jersey: '#f4f4f0', pants: '#f0f0ea', skin: '#c68d62', cap: '#1d3b72', undershirt: '#1d3b72' };
-const AWAY_TEAM: Appearance = { jersey: '#9aa3ad', pants: '#b8bfc7', skin: '#8d5a3b', cap: '#b3261e', undershirt: '#b3261e' };
-const UMPIRE: Appearance = { jersey: '#1b2230', pants: '#59606b', skin: '#e0b48f', cap: '#111111' };
-
-const CPU_NAMES = ['M. Alvarez', 'J. Brooks', 'T. Nakamura', 'D. Okafor', 'R. Castillo', 'K. Whitfield', 'L. Moreau', 'S. Park', 'C. Ramirez', 'B. Lindqvist'];
-
-const FIELDER_SPOTS: Array<[number, number]> = [
-  [58, -82], // 1B
-  [30, -128], // 2B
-  [-32, -128], // SS
-  [-60, -84], // 3B
-  [-150, -255], // LF
-  [0, -312], // CF
-  [150, -255], // RF
-];
+const IN_PLAY_RESULT_MS = 1600;
 
 interface SwingRecord {
   at: number;
@@ -103,10 +85,9 @@ interface PitchInFlight {
 }
 
 interface BallInPlay {
-  path: BattedBallPath;
+  play: LivePlay;
+  exitVeloMph: number;
   contactAt: number;
-  outcome: BallInPlayOutcome;
-  endAt: number;
 }
 
 function swingParams(d: Difficulty): SwingParams {
@@ -121,23 +102,19 @@ function pitchGuideOn(d: Difficulty): boolean {
   return tuning.pitchGuide === 'auto' ? d.pitchGuide : tuning.pitchGuide === 'on';
 }
 
-export class PracticeSession {
-  readonly opts: SessionOptions;
+/** Live pitch-by-pitch play in 3D, for practice or your moments in a game. */
+export class AtBatSession {
   readonly difficulty: Difficulty;
   phase: Phase = 'prePitch';
-  state: GameState = newGameState();
+  /** The live moment is over (the host said so after a pitch). */
+  finished = false;
   private phaseAt = 0;
   private rng: Rng;
-  private group = new THREE.Group();
 
-  private batter: Batter;
-  private pitcher: Pitcher;
-  private batterModel!: Humanoid;
-  private pitcherModel: Humanoid;
-  private catcherModel: Humanoid;
-  private umpireModel: Humanoid;
-  private fielders: Humanoid[] = [];
-  private runners: Humanoid[] = [];
+  private batterId = '';
+  private batter!: Batter;
+  private pitcher!: Pitcher;
+  readonly actors: FieldActors;
   private ball: BallView;
   private zone: ZoneOverlay;
 
@@ -150,166 +127,85 @@ export class PracticeSession {
   private prevPitchMph: number | null = null;
   private pitchLog: PitchLogEntry[] = [];
   private pendingPaEnd = false;
-  private batterIndex = 0;
   private unsubs: Array<() => void> = [];
   private lastEvent = '';
+  private readonly scene: THREE.Scene;
+  private readonly cam: CameraRig;
+  private readonly input: Input;
+  private readonly clock: GameClock;
+  private readonly hud: Hud;
+  private readonly sfx: Sfx;
   /** Test hook: automatically swing (batting) or pitch (pitching). */
   auto = false;
   /** Test hook: how late (ms) the automatic swing is. */
   autoTimingMs = 0;
 
   constructor(
-    opts: SessionOptions,
-    private readonly scene: THREE.Scene,
-    private readonly cam: CameraRig,
-    private readonly input: Input,
-    private readonly clock: GameClock,
-    private readonly hud: Hud,
-    private readonly sfx: Sfx,
+    private readonly host: AtBatHost,
+    deps: SessionDeps,
   ) {
-    this.opts = opts;
-    this.difficulty = DIFFICULTIES[opts.difficulty];
-    this.rng = new Rng(opts.seed ?? Date.now());
-    scene.add(this.group);
+    this.scene = deps.scene;
+    this.cam = deps.cam;
+    this.input = deps.input;
+    this.clock = deps.clock;
+    this.hud = deps.hud;
+    this.sfx = deps.sfx;
+    this.difficulty = host.difficulty;
+    this.rng = host.rng;
 
-    const cpuRating = tuning.cpuRatingOverride || this.difficulty.cpuRating;
-    const userIsBatting = opts.role === 'batting';
-
-    // Pitcher.
-    const pitcherHand: Handedness = userIsBatting ? this.cpuHandFor(0) : opts.userHand;
-    this.pitcher = userIsBatting
-      ? {
-          name: 'CPU Pitcher',
-          throws: pitcherHand,
-          ratings: {
-            velocity: tuning.cpuRatingOverride || this.difficulty.cpuPitcherStuff,
-            control: cpuRating,
-            movement: tuning.cpuRatingOverride || this.difficulty.cpuPitcherStuff,
-          },
-          repertoire: this.cpuRepertoire(),
-        }
-      : { name: 'You', throws: pitcherHand, ratings: { ...tuning.userPitcher }, repertoire: [...PITCH_ORDER] };
-
-    const offense = userIsBatting ? HOME_TEAM : AWAY_TEAM;
-    const defense = userIsBatting ? AWAY_TEAM : HOME_TEAM;
-
-    this.batter = this.makeBatter(0);
-    this.buildBatterModel(offense);
-
-    this.pitcherModel = new Humanoid({ ...defense, gloveHand: 'L' }, { mirrored: pitcherHand === 'L' });
-    this.pitcherModel.root.position.set(0, MOUND_HEIGHT, RUBBER_Z);
-    this.pitcherModel.apply(pitcherSetPose());
-    this.group.add(this.pitcherModel.root);
-
-    this.catcherModel = new Humanoid({ ...defense, gloveHand: 'L' });
-    this.catcherModel.root.position.set(0, 0, CATCHER_ROOT_Z);
-    this.catcherModel.root.rotation.y = Math.PI;
-    this.catcherModel.apply(catcherPose([0, 2.5, 1]));
-    this.group.add(this.catcherModel.root);
-
-    this.umpireModel = new Humanoid(UMPIRE);
-    this.umpireModel.root.position.set(0, 0, CATCHER_ROOT_Z + 2.2);
-    this.umpireModel.root.rotation.y = Math.PI;
-    this.umpireModel.apply(UMPIRE_POSE);
-    this.group.add(this.umpireModel.root);
-
-    for (const [x, z] of FIELDER_SPOTS) {
-      const f = new Humanoid({ ...defense, gloveHand: 'L' });
-      f.root.position.set(x, 0, z);
-      f.root.rotation.y = Math.atan2(-x, -z);
-      f.apply(fielderReadyPose(this.rng.range(0, 6)));
-      this.group.add(f.root);
-      this.fielders.push(f);
-    }
-
-    const r2 = Math.SQRT1_2;
-    const bases: Array<[number, number]> = [
-      [90 * r2 + 3, -90 * r2 + 2],
-      [3, -90 * Math.SQRT2 + 2],
-      [-90 * r2 - 2, -90 * r2 + 3],
-    ];
-    for (const [x, z] of bases) {
-      const r = new Humanoid({ ...offense, gloveHand: null });
-      r.root.position.set(x, 0, z);
-      r.root.rotation.y = Math.atan2(-x, -z);
-      r.apply(fielderReadyPose(0));
-      r.root.visible = false;
-      this.group.add(r.root);
-      this.runners.push(r);
-    }
-
-    this.ball = new BallView(scene);
-    this.ball.setCamera(cam.camera);
-    this.zone = new ZoneOverlay(scene);
+    this.actors = new FieldActors(this.scene, host.offense(), host.defense());
+    this.ball = new BallView(this.scene);
+    this.ball.setCamera(this.cam.camera);
+    this.zone = new ZoneOverlay(this.scene);
+    this.loadMatchup(true);
     this.syncPciSize();
 
-    this.unsubs.push(input.onClick((e) => this.onClick(e)));
-    this.unsubs.push(input.onKey((e) => this.onKey(e)));
+    this.unsubs.push(this.input.onClick((e) => this.onClick(e)));
+    this.unsubs.push(this.input.onKey((e) => this.onKey(e)));
 
-    const shot = userIsBatting ? cam.battingShot(this.batter.bats) : cam.pitchingShot(this.pitcher.throws);
-    cam.setShot(userIsBatting ? 'batting' : 'pitching', shot, true);
+    const userIsBatting = this.isUserBatting();
+    const shot = userIsBatting ? this.cam.battingShot(this.batter.bats) : this.cam.pitchingShot(this.pitcher.throws);
+    this.cam.setShot(userIsBatting ? 'batting' : 'pitching', shot, true);
 
     this.hud.show();
     this.hud.clearFeedback();
     this.refreshHud();
-    this.enterPrePitch(clock.now());
+    this.enterPrePitch(this.clock.now());
   }
 
-  // ---------------------------------------------------------------------------
-  // Setup helpers
-
-  private cpuHandFor(i: number): Handedness {
-    const h = this.opts.cpuHand;
-    if (h === 'S') return i % 3 === 2 ? 'L' : this.rng.chance(0.35) ? 'L' : 'R';
-    return h;
-  }
-
-  private cpuRepertoire(): PitchTypeId[] {
-    const fastball: PitchTypeId = this.rng.chance(0.65) ? 'FF' : 'SI';
-    const others = (['SL', 'CU', 'CH'] as PitchTypeId[]).filter(() => this.rng.chance(0.75));
-    if (others.length < 2) others.push(...(['SL', 'CH'] as PitchTypeId[]).filter((p) => !others.includes(p)));
-    return [fastball, ...others];
-  }
-
-  private makeBatter(i: number): Batter {
-    if (this.opts.role === 'batting') {
-      return { name: 'You', bats: this.opts.userHand, ratings: { ...tuning.userBatter } };
+  /** Pull the current batter and pitcher from the host (new plate appearance). */
+  private loadMatchup(force = false): void {
+    const b = this.host.batter();
+    const p = this.host.pitcher();
+    const newBatter = force || b.id !== this.batterId;
+    this.batterId = b.id;
+    this.batter = b.batter;
+    this.pitcher = p;
+    this.actors.setTeams(this.host.offense(), this.host.defense());
+    this.actors.setPitcherHand(p.throws);
+    if (newBatter) {
+      this.actors.setBatter(b.batter.bats, b.index);
+      this.prevPitchMph = null;
     }
-    const r = tuning.cpuRatingOverride || this.difficulty.cpuRating;
-    const jitter = () => Math.max(20, Math.min(99, r + this.rng.gaussian(0, 8)));
-    return {
-      name: CPU_NAMES[i % CPU_NAMES.length],
-      bats: this.cpuHandFor(i),
-      ratings: { contact: jitter(), power: jitter(), eye: jitter() },
-    };
-  }
-
-  private buildBatterModel(app: Appearance): void {
-    if (this.batterModel) this.group.remove(this.batterModel.root);
-    const lefty = this.batter.bats === 'L';
-    this.batterModel = new Humanoid({ ...app, gloveHand: null }, { bat: true, mirrored: lefty });
-    this.batterModel.root.position.set(lefty ? BATTER_OFFSET : -BATTER_OFFSET, 0, -0.4);
-    this.batterModel.root.rotation.y = lefty ? -Math.PI / 2 : Math.PI / 2;
-    this.batterModel.apply(BATTER_STANCE);
-    this.group.add(this.batterModel.root);
   }
 
   /** Pick up rating / PCI changes from the debug panel. */
   refreshTuning(): void {
-    if (this.isUserBatting()) this.batter.ratings = { ...tuning.userBatter };
-    else this.pitcher.ratings = { ...tuning.userPitcher };
+    this.loadMatchup();
     this.syncPciSize();
     if (this.phase === 'prePitch' && !this.isUserBatting() && this.meter?.phase === 'idle') this.refreshPitchMenu();
   }
 
   private syncPciSize(): void {
-    const s = pciSize('normal', tuning.userBatter.contact, swingParams(this.difficulty));
+    const contact = this.isUserBatting() ? this.batter.ratings.contact : tuning.userBatter.contact;
+    const s = pciSize('normal', contact, swingParams(this.difficulty));
     this.zone.setPciSize(s.outerHalfW, s.outerHalfH, s.innerHalfW, s.innerHalfH);
   }
 
   dispose(): void {
     for (const u of this.unsubs) u();
-    this.scene.remove(this.group);
+    this.inPlay?.play.dispose();
+    this.actors.dispose(this.scene);
     this.scene.remove(this.zone.group);
     this.ball.hide();
     this.scene.remove(this.ball.mesh, this.ball.shadow);
@@ -322,7 +218,7 @@ export class PracticeSession {
   // Input
 
   private isUserBatting(): boolean {
-    return this.opts.role === 'batting';
+    return this.host.role === 'batting';
   }
 
   private onClick(e: ClickEvent): void {
@@ -371,10 +267,11 @@ export class PracticeSession {
     this.pitch = null;
     this.inPlay = null;
     this.ball.clearTrail();
-    this.batterModel.apply(BATTER_STANCE);
-    this.pitcherModel.apply(pitcherSetPose());
-    this.catcherModel.apply(catcherPose([0, 2.4, 1]));
-    for (const f of this.fielders) f.root.rotation.y = Math.atan2(-f.root.position.x, -f.root.position.z);
+    this.loadMatchup();
+    this.actors.resetDefense();
+    this.actors.batter.apply(BATTER_STANCE);
+    this.actors.setBaseRunners(this.host.state().bases);
+    this.syncPciSize();
 
     if (this.isUserBatting()) {
       this.cam.setShot('batting', this.cam.battingShot(this.batter.bats));
@@ -417,11 +314,11 @@ export class PracticeSession {
     this.phaseAt = now;
     this.hud.setPitchMenu(null, null);
     this.hud.setMeter(null, null);
-    this.catcherModel.apply(catcherPose(this.mittLocal(target, 2.4)));
+    this.actors.catcher.apply(catcherPose(this.mittLocal(target, 2.4)));
   }
 
   private cpuPitch(now: number): void {
-    const plan = planCpuPitch(this.pitcher, this.state.count, this.batter.bats, this.rng, this.difficulty.cpuZoneBias);
+    const plan = planCpuPitch(this.pitcher, this.host.state().count, this.batter.bats, this.rng, this.difficulty.cpuZoneBias);
     this.startPitch(now, plan.spec, plan.target);
   }
 
@@ -478,7 +375,7 @@ export class PracticeSession {
   private cpuDecide(): void {
     const p = this.pitch!;
     p.cpuDecided = true;
-    const d = decideCpuSwing(this.batter, p.traj, this.state.count, this.prevPitchMph, this.rng);
+    const d = decideCpuSwing(this.batter, p.traj, this.host.state().count, this.prevPitchMph, this.rng);
     if (!d.swing || !d.input) return;
     const result = evaluateSwing(
       d.input,
@@ -521,27 +418,28 @@ export class PracticeSession {
     }
     const start: Vec3 = { x: p.traj.spec.plateLoc.x, y: p.traj.spec.plateLoc.y, z: -0.3 };
     const path = simulateBattedBall({ exitVeloMph: ev, launchAngleDeg: la, sprayDeg: spray, start });
-    const outcome = r.kind === 'foulTip' ? ({ kind: 'foul', label: 'Foul tip' } as const) : classifyBattedBall(path, this.rng);
-    const endAt =
-      now +
-      1000 *
-        (outcome.kind === 'foul'
-          ? Math.min(path.duration, path.landingTime + 0.8, 3.2)
-          : path.homeRun
-            ? Math.min(path.duration, path.landingTime + 0.5)
-            : Math.min(path.duration, path.landingTime + 1.6, 7));
-    this.inPlay = { path, contactAt: now, outcome, endAt };
+    const setup = this.host.playSetup(path);
+    if (r.kind === 'foulTip') setup.foul = true;
+    const play = new LivePlay(setup, {
+      scene: this.scene,
+      actors: this.actors,
+      ball: this.ball,
+      cam: this.cam,
+      input: this.input,
+      hud: this.hud,
+      sfx: this.sfx,
+      nameOf: (id) => this.host.nameOf(id),
+    });
+    this.inPlay = { play, exitVeloMph: ev, contactAt: now };
     this.phase = 'inPlay';
     this.phaseAt = now;
     this.sfx.batCrack(quality);
-    if (outcome.kind !== 'foul' && ev > 95 && la > 15) this.sfx.crowd(Math.min(1, (ev - 90) / 20), 3);
-    this.cam.setShot('follow', null);
+    if (!setup.foul && ev > 95 && la > 15) this.sfx.crowd(Math.min(1, (ev - 90) / 20), 3);
   }
 
   private finishPitch(now: number, ev: PitchEvent, call: string): void {
     const p = this.pitch!;
-    const out = applyPitch(this.state, ev);
-    this.state = out.state;
+    const out = this.host.apply(ev, p.traj.spec.speedMph);
     this.lastEvent = out.description;
     this.prevPitchMph = p.traj.spec.speedMph;
     const def = PITCH_TYPES[p.traj.spec.type];
@@ -569,9 +467,9 @@ export class PracticeSession {
 
     if (ev.type === 'inPlay' && s && s.result.kind === 'contact' && this.inPlay) {
       const r = s.result;
-      const bb = this.inPlay.path;
-      const o = ev.outcome;
-      const title = description;
+      const bb = this.inPlay.play.sim.setup.path;
+      const play = ev.play;
+      const title = capitalize(description);
       const detail = [
         `${timing(r.timingErrorMs, r.timingLabel)} · ${r.contactLabel}`,
         `${r.exitVeloMph.toFixed(1)} mph · ${r.launchAngleDeg.toFixed(0)}° · ${Math.round(bb.distance)} ft`,
@@ -579,8 +477,8 @@ export class PracticeSession {
       ]
         .filter(Boolean)
         .join('<br>');
-      const good = o.kind === 'hit';
-      const tone = o.kind === 'hit' && o.hit === 'homeRun' ? 'big' : o.kind === 'foul' ? 'neutral' : good === batting ? 'good' : 'bad';
+      const hit = ['single', 'double', 'triple', 'homeRun'].includes(play.batterResult);
+      const tone = play.batterResult === 'homeRun' ? 'big' : hit === batting ? 'good' : 'bad';
       this.hud.feedback(title, detail, tone, 3000);
       return;
     }
@@ -610,35 +508,29 @@ export class PracticeSession {
     const good =
       ev.type === 'ball' ? batting : ev.type === 'calledStrike' || ev.type === 'swingingStrike' || ev.type === 'foul' ? !batting : false;
     const tone = description.startsWith('Strike three') || description.includes('walk') ? (good ? 'good' : 'bad') : 'neutral';
-    this.hud.feedback(description, detail, tone, 2000);
+    this.hud.feedback(capitalize(description), detail, tone, 2000);
   }
 
   private endResult(now: number): void {
-    if (this.pendingPaEnd) {
+    const paEnded = this.pendingPaEnd;
+    if (paEnded) {
       this.pitchLog = [];
       this.zone.clearMarkers();
-      if (!this.isUserBatting()) {
-        this.batterIndex++;
-        this.batter = this.makeBatter(this.batterIndex);
-        this.buildBatterModel(AWAY_TEAM);
-      }
     }
     this.pendingPaEnd = false;
+    this.inPlay?.play.dispose();
+    this.inPlay = null;
+    if (!this.host.afterPitch(paEnded)) {
+      this.finished = true;
+      return;
+    }
     this.refreshHud();
     this.enterPrePitch(now);
   }
 
   private refreshHud(): void {
-    const displayState = this.state.outs >= 3 && this.phase !== 'result' ? { ...this.state, outs: 0, bases: [false, false, false] as [boolean, boolean, boolean], count: { balls: 0, strikes: 0 }, inning: this.state.inning + 1 } : this.state;
-    this.hud.update(displayState, this.opts.role);
-    const hand = (h: Handedness) => (h === 'R' ? 'RHP' : 'LHP');
-    const bats = (h: Handedness) => (h === 'R' ? 'R' : 'L');
-    this.hud.setMatchup(
-      `${this.pitcher.name} <span class="lbl">${hand(this.pitcher.throws)}</span>`,
-      `${this.batter.name} <span class="lbl">BATS ${bats(this.batter.bats)}</span>`,
-    );
+    this.host.refreshHud(this.hud);
     this.hud.setLog(this.pitchLog);
-    displayState.bases.forEach((on, i) => (this.runners[i].root.visible = on));
   }
 
   // ---------------------------------------------------------------------------
@@ -686,8 +578,8 @@ export class PracticeSession {
     document.getElementById('game')?.classList.toggle('aiming', aiming);
     // The batting camera sits where the catcher and umpire are; hide them in that view.
     const battingCam = this.isUserBatting() && (this.cam.mode === 'batting' || !this.cam.settled);
-    this.catcherModel.root.visible = !battingCam;
-    this.umpireModel.root.visible = !battingCam;
+    this.actors.catcher.root.visible = !battingCam;
+    this.actors.umpire.root.visible = !battingCam;
 
     switch (this.phase) {
       case 'prePitch':
@@ -698,21 +590,18 @@ export class PracticeSession {
         this.updatePitch(now);
         break;
       case 'inPlay':
-        this.updateInPlay(now);
+        this.updateInPlay(now, dt);
         break;
       case 'result': {
         const hold = this.inPlay ? IN_PLAY_RESULT_MS : RESULT_MS;
-        if (this.inPlay) this.updateBallInPlayVisual(now);
-        this.animateSwing(now);
+        if (this.inPlay) this.inPlay.play.update(dt);
+        else this.animateSwing(now);
         if (now - this.phaseAt > hold) this.endResult(now);
         break;
       }
     }
 
-    // Idle fielders.
-    this.fielders.forEach((f, i) => {
-      if (!this.inPlay) f.apply(fielderReadyPose(now / 600 + i));
-    });
+    if (!this.inPlay) this.actors.idle(now);
     this.cam.update(dt);
   }
 
@@ -738,9 +627,10 @@ export class PracticeSession {
   }
 
   private placeBallInHand(): void {
-    const hand = this.pitcherModel.handPosition('R');
-    this.pitcherModel.root.updateMatrixWorld();
-    hand.applyMatrix4(this.pitcherModel.root.matrixWorld);
+    const pm = this.actors.pitcher;
+    const hand = pm.handPosition('R');
+    pm.root.updateMatrixWorld();
+    hand.applyMatrix4(pm.root.matrixWorld);
     this.ball.set(hand);
     this.ball.clearTrail();
   }
@@ -748,10 +638,10 @@ export class PracticeSession {
   private updatePitch(now: number): void {
     const p = this.pitch!;
     // Pitcher delivery.
-    this.pitcherModel.apply(samplePose(pitcherKeys(), (now - p.windupAt) / 1000));
+    this.actors.pitcher.apply(samplePose(pitcherKeys(), (now - p.windupAt) / 1000));
     // Batter: load during the windup, then swing if he swings.
     const loadT = Math.min(1, (now - p.windupAt) / (p.releaseAt - p.windupAt));
-    if (!this.animateSwing(now)) this.batterModel.apply(samplePose(batterLoadKeys(), loadT));
+    if (!this.animateSwing(now)) this.actors.batter.apply(samplePose(batterLoadKeys(), loadT));
 
     if (this.auto && this.isUserBatting() && !p.swing && now >= p.arrivalAt - SWING_TIME_MS - 5) {
       // Test hook: perfect swing at the ball.
@@ -775,7 +665,7 @@ export class PracticeSession {
     const act = p.traj.spec.plateLoc;
     const catchY = positionAt(p.traj, (p.catchAt - p.releaseAt) / 1000).y;
     const mix = { x: THREE.MathUtils.lerp(tgt.x, act.x, k), y: THREE.MathUtils.lerp(tgt.y, catchY, k) };
-    this.catcherModel.apply(catcherPose(this.mittLocal(mix, mix.y)));
+    this.actors.catcher.apply(catcherPose(this.mittLocal(mix, mix.y)));
 
     const t = Math.min(now, p.catchAt);
     const pos = positionAt(p.traj, (t - p.releaseAt) / 1000);
@@ -818,35 +708,24 @@ export class PracticeSession {
     if (!s || now < s.at) return false;
     const t = (now - s.at) / 1000;
     if (t > SWING_DURATION + 1) return false;
-    this.batterModel.apply(samplePose(s.keys, t));
+    this.actors.batter.apply(samplePose(s.keys, t));
     return true;
   }
 
-  private updateBallInPlayVisual(now: number): void {
+  private updateInPlay(now: number, dt: number): void {
     const ip = this.inPlay!;
-    const t = (now - ip.contactAt) / 1000;
-    const pos = pathPositionAt(ip.path, Math.min(t, ip.path.duration));
-    this.ball.set(pos, t * 20, true);
-    this.cam.follow(pos);
-    // Fielders turn to watch the ball.
-    for (const f of this.fielders) {
-      f.root.rotation.y = Math.atan2(pos.x - f.root.position.x, pos.z - f.root.position.z);
-    }
-  }
-
-  private updateInPlay(now: number): void {
-    this.animateSwing(now);
-    this.updateBallInPlayVisual(now);
-    const ip = this.inPlay!;
-    if (now >= ip.endAt) {
-      const swing = this.pitch!.swing!;
-      const ev: PitchEvent = {
-        type: 'inPlay',
-        outcome: ip.outcome,
-        exitVeloMph: swing.result.kind === 'contact' ? swing.result.exitVeloMph : 0,
-      };
-      const call = ip.outcome.kind === 'foul' ? 'Foul' : ip.outcome.kind === 'hit' ? ip.outcome.label.replace('!', '') : 'In play, out';
-      if (ip.outcome.kind === 'hit' && ip.outcome.hit === 'homeRun') this.sfx.crowd(1, 4);
+    if (now - ip.contactAt < 0.5) this.animateSwing(now);
+    ip.play.update(dt);
+    if (ip.play.done) {
+      const o = ip.play.outcome!;
+      const ev: PitchEvent = o.kind === 'foul' ? { type: 'foul' } : { type: 'inPlay', play: o, exitVeloMph: ip.exitVeloMph };
+      const call =
+        o.kind === 'foul'
+          ? 'Foul'
+          : o.batterResult === 'out' || o.batterResult === 'fc'
+            ? 'In play, out'
+            : { single: 'Single', double: 'Double', triple: 'Triple', homeRun: 'Home run' }[o.batterResult];
+      if (o.kind === 'play' && o.batterResult === 'homeRun') this.sfx.crowd(1, 4);
       this.finishPitch(now, ev, call);
     }
   }
@@ -860,17 +739,24 @@ export class PracticeSession {
   // Test hook support
 
   snapshot() {
+    const st = this.host.state();
     return {
-      role: this.opts.role,
+      role: this.host.role,
       phase: this.phase,
-      count: { ...this.state.count },
-      outs: this.state.outs,
-      inning: this.state.inning,
-      runs: this.state.runs,
-      batting: { ...this.state.batting },
-      pitching: { ...this.state.pitching },
+      count: { ...st.count },
+      outs: st.outs,
+      inning: st.inning,
+      runs: st.runs,
+      batting: { ...st.batting },
+      pitching: { ...st.pitching },
       lastEvent: this.lastEvent,
-      pitches: this.state.pitching.pitches,
+      pitches: st.pitching.pitches,
+      playT: this.inPlay ? Number(this.inPlay.play.sim.t.toFixed(2)) : null,
+      playDone: this.inPlay ? this.inPlay.play.sim.done : null,
     };
   }
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

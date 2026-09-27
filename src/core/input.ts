@@ -19,6 +19,7 @@ export class Input {
   private hit = new THREE.Vector3();
   private clickHandlers: Array<(e: ClickEvent) => void> = [];
   private keyHandlers: Array<(e: KeyboardEvent) => void> = [];
+  private held = new Set<string>();
   hasMouse = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -34,8 +35,11 @@ export class Input {
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', (e) => {
+      this.held.add(e.key.toLowerCase());
       for (const h of this.keyHandlers) h(e);
     });
+    window.addEventListener('keyup', (e) => this.held.delete(e.key.toLowerCase()));
+    window.addEventListener('blur', () => this.held.clear());
   }
 
   onClick(h: (e: ClickEvent) => void): () => void {
@@ -46,6 +50,17 @@ export class Input {
   onKey(h: (e: KeyboardEvent) => void): () => void {
     this.keyHandlers.push(h);
     return () => (this.keyHandlers = this.keyHandlers.filter((x) => x !== h));
+  }
+
+  /** Is a key (KeyboardEvent.key, lower case) held down? */
+  isDown(...keys: string[]): boolean {
+    return keys.some((k) => this.held.has(k));
+  }
+
+  /** Test hook: press or release a key. */
+  setKey(key: string, down: boolean): void {
+    if (down) this.held.add(key);
+    else this.held.delete(key);
   }
 
   /** Mouse position projected onto the zone plane, or null if it misses. */

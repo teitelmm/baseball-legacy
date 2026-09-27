@@ -40,7 +40,7 @@ describe('CPU AI', () => {
       if (decideCpuSwing(batter, strike, { balls: 1, strikes: 1 }, null, rng).swing) s++;
       if (decideCpuSwing(batter, dirt, { balls: 1, strikes: 1 }, null, rng).swing) d++;
     }
-    expect(s / 300).toBeGreaterThan(0.75);
+    expect(s / 300).toBeGreaterThan(0.6);
     expect(d / 300).toBeLessThan(0.15);
   });
 

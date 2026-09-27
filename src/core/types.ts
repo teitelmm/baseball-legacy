@@ -49,3 +49,65 @@ export interface Count {
 export type Bases = [boolean, boolean, boolean];
 
 export type SwingType = 'normal' | 'power';
+
+export type Position = 'P' | 'C' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF' | 'DH';
+export type FieldPosition = Exclude<Position, 'DH'>;
+
+export const FIELD_POSITIONS: FieldPosition[] = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+
+/** Scorekeeping numbers (P=1 ... RF=9). */
+export const POSITION_NUMBER: Record<FieldPosition, number> = {
+  P: 1,
+  C: 2,
+  '1B': 3,
+  '2B': 4,
+  '3B': 5,
+  SS: 6,
+  LF: 7,
+  CF: 8,
+  RF: 9,
+};
+
+export interface FieldingRatings {
+  /** Running speed. */
+  speed: number;
+  /** Throwing strength. */
+  arm: number;
+  /** Reaction and range. */
+  glove: number;
+}
+
+export interface Player {
+  id: string;
+  name: string;
+  number: number;
+  bats: Handedness;
+  throws: Handedness;
+  pos: Position;
+  batting: BattingRatings;
+  fielding: FieldingRatings;
+  pitching?: PitchingRatings & { stamina: number };
+  repertoire?: PitchTypeId[];
+  isUser?: boolean;
+}
+
+export interface TeamColors {
+  jersey: string;
+  pants: string;
+  cap: string;
+  accent: string;
+}
+
+export interface Team {
+  id: string;
+  name: string;
+  abbr: string;
+  colors: TeamColors;
+  players: Record<string, Player>;
+  /** Batting order: 9 player ids. */
+  lineup: string[];
+  /** Who plays each field position (the pitcher slot is filled by the current pitcher). */
+  defense: Record<Exclude<FieldPosition, 'P'>, string>;
+  /** Starting pitcher first, then the bullpen in the order they're used. */
+  pitchers: string[];
+}

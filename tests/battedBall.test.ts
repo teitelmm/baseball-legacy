@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fenceDistance } from '../src/core/constants';
-import { Rng } from '../src/core/rng';
 import { simulateBattedBall } from '../src/sim/battedBall';
-import { classifyBattedBall } from '../src/sim/outcome';
+import { isFoul } from '../src/sim/outcome';
 
 const hit = (ev: number, la: number, spray = 0) =>
   simulateBattedBall({ exitVeloMph: ev, launchAngleDeg: la, sprayDeg: spray, start: { x: 0, y: 3, z: 0 } });
@@ -30,7 +29,7 @@ describe('batted ball flight', () => {
   it('110 mph at 28 degrees is a home run', () => {
     const p = hit(110, 28, -15);
     expect(p.homeRun).toBe(true);
-    expect(classifyBattedBall(p, new Rng(1))).toMatchObject({ kind: 'hit', hit: 'homeRun' });
+    expect(isFoul(p)).toBe(false);
   });
 
   it('ground balls land short and pop ups hang', () => {
@@ -41,14 +40,8 @@ describe('batted ball flight', () => {
   });
 
   it('balls outside the foul lines are foul', () => {
-    expect(classifyBattedBall(hit(100, 20, 55), new Rng(2)).kind).toBe('foul');
-    expect(classifyBattedBall(hit(100, 5, -50), new Rng(2)).kind).toBe('foul');
-  });
-
-  it('pop ups are almost always outs', () => {
-    const rng = new Rng(3);
-    let outs = 0;
-    for (let i = 0; i < 100; i++) if (classifyBattedBall(hit(80, 60, 5), rng).kind === 'out') outs++;
-    expect(outs).toBeGreaterThan(90);
+    expect(isFoul(hit(100, 20, 55))).toBe(true);
+    expect(isFoul(hit(100, 5, -50))).toBe(true);
+    expect(isFoul(hit(100, 20, 30))).toBe(false);
   });
 });

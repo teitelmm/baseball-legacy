@@ -4,7 +4,9 @@ import { Sfx } from './audio/sfx';
 import { GameClock } from './core/clock';
 import { Input } from './core/input';
 import { tuning } from './core/tuning';
-import { PracticeSession, type SessionOptions } from './modes/session';
+import { AtBatSession, type SessionDeps } from './modes/atBatSession';
+import { GameSession, type GameSetupOptions } from './modes/gameSession';
+import { PracticeHost, type PracticeOptions } from './modes/practiceHost';
 import { CameraRig } from './scene/cameraRig';
 import { buildStadium } from './scene/stadium';
 import { createDebugPanel } from './ui/debugPanel';
@@ -34,50 +36,74 @@ const input = new Input(canvas);
 const sfx = new Sfx();
 const hud = new Hud(uiRoot);
 
-let session: PracticeSession | null = null;
-let lastOpts: SessionOptions | null = null;
+const deps: SessionDeps = { scene, cam, input, clock, hud, sfx };
 
-function start(opts: SessionOptions): void {
+type Current = { kind: 'practice'; session: AtBatSession; opts: PracticeOptions } | { kind: 'game'; session: GameSession; opts: GameSetupOptions };
+let current: Current | null = null;
+
+function stopCurrent(): void {
+  current?.session.dispose();
+  current = null;
+}
+
+function startPractice(opts: PracticeOptions): void {
   sfx.unlock();
-  session?.dispose();
-  lastOpts = opts;
+  stopCurrent();
   menu.hide();
   pause.hide();
   clock.setTimeScale(tuning.timeScale);
-  session = new PracticeSession(opts, scene, cam, input, clock, hud, sfx);
+  current = { kind: 'practice', session: new AtBatSession(new PracticeHost(opts), deps), opts };
+}
+
+function startGame(opts: GameSetupOptions): void {
+  sfx.unlock();
+  stopCurrent();
+  menu.hide();
+  pause.hide();
+  clock.setTimeScale(tuning.timeScale);
+  const session = new GameSession(opts, { ...deps, uiRoot }, quitToMenu, () => startGame(opts));
+  current = { kind: 'game', session, opts };
 }
 
 function quitToMenu(): void {
-  session?.dispose();
-  session = null;
+  stopCurrent();
   pause.hide();
   clock.setTimeScale(tuning.timeScale);
   menu.show();
 }
 
 function setPaused(p: boolean): void {
-  if (!session) return;
+  if (!current) return;
   if (p) {
     clock.setTimeScale(0);
-    pause.show();
+    pause.show(current.kind === 'game' && !current.session.finished);
   } else {
     clock.setTimeScale(tuning.timeScale);
     pause.hide();
   }
 }
 
-const menu = new Menu(uiRoot, start);
+const menu = new Menu(uiRoot, { practice: startPractice, game: startGame });
 const pause = new PauseMenu(uiRoot, {
   resume: () => setPaused(false),
-  restart: () => lastOpts && start(lastOpts),
+  restart: () => {
+    if (current?.kind === 'practice') startPractice(current.opts);
+    else if (current?.kind === 'game') startGame(current.opts);
+  },
   quit: quitToMenu,
+  simToEnd: () => {
+    if (current?.kind === 'game') {
+      setPaused(false);
+      current.session.simToEnd();
+    }
+  },
 });
 
 const gui = createDebugPanel((key) => {
   if (key === 'timeScale') {
     if (!pause.visible) clock.setTimeScale(tuning.timeScale);
   } else {
-    session?.refreshTuning();
+    current?.session.refreshTuning();
   }
 });
 
@@ -103,9 +129,9 @@ function menuCamera(now: number): void {
 let lastReal = performance.now();
 function frame(): void {
   const real = performance.now();
-  const dt = Math.min(0.1, (real - lastReal) / 1000) * (pause.visible ? 0 : tuning.timeScale);
+  const dt = Math.min(0.35, (real - lastReal) / 1000) * (pause.visible ? 0 : tuning.timeScale);
   lastReal = real;
-  if (session) session.update(clock.now(), dt);
+  if (current) current.session.update(clock.now(), dt);
   else menuCamera(real);
   renderer.render(scene, cam.camera);
   requestAnimationFrame(frame);
@@ -115,13 +141,16 @@ requestAnimationFrame(frame);
 // Test hook for automated smoke tests (only with ?test in the URL).
 if (new URLSearchParams(location.search).has('test')) {
   (window as unknown as { __game: unknown }).__game = {
-    start: (opts: SessionOptions) => start({ seed: 42, ...opts }),
+    start: (opts: PracticeOptions) => startPractice({ seed: 42, ...opts }),
+    startGame: (opts: GameSetupOptions) => startGame({ seed: 7, ...opts }),
     setAuto: (v: boolean, lateMs = 0) => {
-      if (!session) return;
-      session.auto = v;
-      session.autoTimingMs = lateMs;
+      if (current?.kind === 'practice') {
+        current.session.auto = v;
+        current.session.autoTimingMs = lateMs;
+      } else if (current?.kind === 'game') current.session.setAuto(v, lateMs);
     },
-    snapshot: () => session?.snapshot() ?? null,
+    snapshot: () => current?.session.snapshot() ?? null,
+    simToEnd: () => current?.kind === 'game' && current.session.simToEnd(),
     setTimeScale: (s: number) => {
       tuning.timeScale = s;
       clock.setTimeScale(s);

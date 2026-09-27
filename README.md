@@ -8,7 +8,7 @@ player — an outfielder, pitcher, DH, or two-way player — and play a season a
 | Stage | What it adds | Status |
 | --- | --- | --- |
 | 1 | Core hitting & pitching: Batting Practice and Pitching Practice with count, outs and base runners | **Done** |
-| 2 | Full games & fielding: AI fielders, throws, baserunning, outfield / DH / pitcher position play, 9-inning games | Planned |
+| 2 | Full games & fielding: AI fielders, throws, baserunning, outfield / DH / pitcher position play, 3/6/9-inning games, box scores | **Done** |
 | 3 | Home screen & player creation: position (LF/CF/RF/P/DH or two-way), bats/throws, appearance, archetypes | Planned |
 | 4 | Season mode: schedule, simulated league, standings, stats, progression, two-way rotation, save/load | Planned |
 
@@ -28,7 +28,18 @@ npm run build      # production build in dist/ (relative paths, can be hosted an
 npm run smoke      # headless Playwright playtest of the built game (run `npm run build` first); screenshots in screenshots/
 ```
 
-## Controls (Stage 1)
+## Playing a game (Stage 2)
+
+Pick **Play a Game** on the main menu and choose your position (LF, CF, RF, DH or P), innings (3, 6 or 9) and
+whether your team is home or away. It's "Road to the Show" style: you play your at-bats, the balls hit to your
+area of the outfield, and every pitch while you're on the mound. Everything else is simulated, and a recap
+with the line score and play-by-play appears before each of your moments. **Sim to end of game** (recap screen
+or pause menu) finishes the game instantly. A box score appears at the end.
+
+Fielders chase, catch and throw; runners run, take extra bases, tag up and get forced out. Pitchers tire
+(watch the stamina bar) and the manager goes to the bullpen.
+
+## Controls
 
 **Hitting**
 - **Mouse** — move the PCI (plate coverage indicator)
@@ -43,6 +54,11 @@ npm run smoke      # headless Playwright playtest of the built game (run `npm ru
 - **Click** to start the meter, **click** to set power, **click** again on the yellow line for accuracy.
   The red zone at the top is max effort: a little more velocity, a lot less control.
 
+**Fielding (outfield)**
+- **W A S D** or **arrow keys** — run (relative to the camera); the yellow ring shows where the ball will land
+- The catch is automatic when you get to the ball
+- **1 / 2 / 3 / 4** — throw to first, second, third or home (the AI throws for you if you wait)
+
 **General**
 - **Esc** — pause / quit to menu
 - **`** (backtick) — debug & tuning panel (game speed, timing windows, PCI size, ratings, ball trail)
@@ -53,9 +69,10 @@ npm run smoke      # headless Playwright playtest of the built game (run `npm ru
 ```
 src/core/     constants (field, physics, difficulty), types, seeded RNG, game clock, input, tuning
 src/sim/      pure game logic, no rendering — pitch physics, pitch meter, swing/contact model,
-              batted-ball flight, outcome odds, at-bat engine, CPU pitcher/batter AI
+              batted-ball flight, play simulator (fielders, throws, runners), at-bat engine,
+              full-game engine (box score, fatigue, bullpen), teams, CPU pitcher/batter AI
 src/scene/    stadium, IK-driven primitive players + animations, ball, zone overlay, cameras
-src/modes/    PracticeSession: the per-pitch state machine for both practice modes
+src/modes/    AtBatSession (live pitches), LivePlay (live ball in play), practice and game sessions
 src/ui/       HUD, menus, debug panel
 src/audio/    synthesized sound effects
 tests/        Vitest unit tests for src/sim

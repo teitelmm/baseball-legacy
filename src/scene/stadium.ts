@@ -9,6 +9,7 @@ import {
   RUBBER_Z,
   WALL_HEIGHT,
 } from '../core/constants';
+import { stadiumBoundary } from '../sim/field';
 
 const GRASS_A = '#3f8a3a';
 const GRASS_B = '#4a9a42';
@@ -22,39 +23,6 @@ const deg = THREE.MathUtils.degToRad;
 function sprayDir(angleDeg: number): [number, number] {
   const a = deg(angleDeg);
   return [Math.sin(a), -Math.cos(a)];
-}
-
-/**
- * The stadium's inner boundary polygon (x, z): the outfield fence from the left field
- * pole to the right field pole, down the right field foul wall, around the backstop,
- * and up the left field foul wall.
- */
-function boundary(): Array<[number, number]> {
-  const foulOffset = 48;
-  const [rlx, rlz] = sprayDir(FOUL_ANGLE);
-  const outward: [number, number] = [Math.SQRT1_2, Math.SQRT1_2]; // away from fair territory on the right side
-
-  const fence: Array<[number, number]> = [];
-  for (let a = -FOUL_ANGLE; a <= FOUL_ANGLE + 1e-6; a += 3) {
-    const [dx, dz] = sprayDir(a);
-    const d = fenceDistance(a);
-    fence.push([dx * d, dz * d]);
-  }
-
-  // Right field foul wall, from near home out to the pole.
-  const rightWall: Array<[number, number]> = [];
-  for (let s = 40; s <= 330; s += 29) {
-    rightWall.push([rlx * s + outward[0] * foulOffset, rlz * s + outward[1] * foulOffset]);
-  }
-  const leftWall = rightWall.map(([x, z]) => [-x, z] as [number, number]);
-
-  // Backstop arc behind the plate, right side to left side.
-  const backstop: Array<[number, number]> = [];
-  for (let a = 135; a <= 225; a += 7.5) {
-    backstop.push([Math.sin(deg(a)) * 62, -Math.cos(deg(a)) * 62]);
-  }
-
-  return [...fence, ...rightWall.slice().reverse(), ...backstop, ...leftWall];
 }
 
 function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -478,7 +446,7 @@ function sky(): THREE.Mesh {
 export function buildStadium(renderer: THREE.WebGLRenderer): THREE.Group {
   const g = new THREE.Group();
   const aniso = renderer.capabilities.getMaxAnisotropy();
-  const bounds = boundary();
+  const bounds = stadiumBoundary();
 
   const outer: GroundRegion = { xmin: -340, xmax: 340, zmin: -480, zmax: 120, ppf: 2 };
   g.add(groundPlane(outer, groundTexture(outer, drawField, aniso), 0, false));
