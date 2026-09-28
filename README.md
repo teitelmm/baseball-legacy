@@ -9,7 +9,7 @@ player — an outfielder, pitcher, DH, or two-way player — and play a season a
 | --- | --- | --- |
 | 1 | Core hitting & pitching: Batting Practice and Pitching Practice with count, outs and base runners | **Done** |
 | 2 | Full games & fielding: AI fielders, throws, baserunning, outfield / DH / pitcher position play, 3/6/9-inning games, box scores | **Done** |
-| 3 | Home screen & player creation: position (LF/CF/RF/P/DH or two-way), bats/throws, appearance, archetypes | Planned |
+| 3 | Home screen & player creation: position (LF/CF/RF/P/DH or two-way), bats/throws, appearance, archetypes | **Done** |
 | 4 | Season mode: schedule, simulated league, standings, stats, progression, two-way rotation, save/load | Planned |
 
 ## Running it
@@ -28,10 +28,29 @@ npm run build      # production build in dist/ (relative paths, can be hosted an
 npm run smoke      # headless Playwright playtest of the built game (run `npm run build` first); screenshots in screenshots/
 ```
 
+## Your player (Stage 3)
+
+The game opens on the home screen. **Create your player** first:
+
+- **Identity:** first and last name, and number (0–99). Your last name and number go on the back of your jersey.
+- **Position:**
+  - LF, CF, RF, DH or P.
+  - **Two-way:** you pitch *and* play a hitting spot (LF, CF, RF or DH). Doing both costs 4 points on every rating.
+- **Bats / Throws.**
+- **Archetype:** sets your starting ratings.
+  - Hitters: Contact Hitter, Power Slugger, Five-Tool, Speedster, Gap Hitter.
+  - Pitchers: Flamethrower, Control Artist, Junkballer, Workhorse.
+- **Bonus points:** 15 points to spend, up to +8 on any one rating.
+- **Look:** skin tone, hair and hair color, facial hair, build, height (5'8"–6'6"), eye black, and bat and glove colors.
+
+Up to three players are saved in your browser (**Change Player** on the home screen). Your player's name, ratings and look are used in practice and in games. A two-way player picks the day's role before each game:
+- **Pitch + bat:** start on the mound and hit as the DH.
+- **Play your position.**
+
 ## Playing a game (Stage 2)
 
-Pick **Play a Game** on the main menu and choose your position (LF, CF, RF, DH or P), innings (3, 6 or 9) and
-whether your team is home or away. It's "Road to the Show" style: you play your at-bats, the balls hit to your
+Pick **Play Game** on the home screen and choose the difficulty, innings (3, 6 or 9) and whether your team is
+home or away. It's "Road to the Show" style: you play your at-bats, the balls hit to your
 area of the outfield, and every pitch while you're on the mound. Everything else is simulated, and a recap
 with the line score and play-by-play appears before each of your moments. **Sim to end of game** (recap screen
 or pause menu) finishes the game instantly. A box score appears at the end.

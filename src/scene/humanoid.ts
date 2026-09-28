@@ -31,8 +31,43 @@ export interface Appearance {
   pants: string;
   skin: string;
   cap: string;
+  /** Sleeves, socks and lettering. */
   undershirt?: string;
   gloveHand?: 'L' | 'R' | null;
+  /** Height in inches (default 73 = 6'1"). */
+  heightIn?: number;
+  build?: 'slim' | 'athletic' | 'stocky';
+  hair?: 'none' | 'buzz' | 'short' | 'long' | 'curly';
+  hairColor?: string;
+  facialHair?: 'none' | 'stubble' | 'mustache' | 'goatee' | 'beard';
+  eyeBlack?: boolean;
+  number?: number;
+  backName?: string;
+  batColor?: string;
+  gloveColor?: string;
+}
+
+const BASE_HEIGHT_IN = 73;
+
+function backPlateTexture(name: string | undefined, number: number, color: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = color;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.lineWidth = 6;
+  if (name) {
+    ctx.font = 'bold 38px sans-serif';
+    ctx.fillText(name.toUpperCase().slice(0, 12), 128, 58);
+  }
+  ctx.font = 'bold 150px sans-serif';
+  ctx.strokeText(String(number), 128, name ? 212 : 190);
+  ctx.fillText(String(number), 128, name ? 212 : 190);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 export type Keyframes = Array<[number, Pose]>;
@@ -140,29 +175,59 @@ export class Humanoid {
   private readonly hands: { R: THREE.Mesh; L: THREE.Mesh };
   pose: Pose;
 
+  /** Uniform size relative to a 6'1" player. */
+  readonly scale: number;
+
   constructor(app: Appearance, opts: { bat?: boolean; mirrored?: boolean } = {}) {
+    const build = app.build ?? 'athletic';
+    const bw = build === 'slim' ? 0.9 : build === 'stocky' ? 1.15 : 1;
+    const lw = build === 'slim' ? 0.9 : build === 'stocky' ? 1.12 : 1;
     const jersey = new THREE.MeshStandardMaterial({ color: app.jersey, roughness: 0.8 });
     const pants = new THREE.MeshStandardMaterial({ color: app.pants, roughness: 0.85 });
     const skin = new THREE.MeshStandardMaterial({ color: app.skin, roughness: 0.7 });
     const cap = new THREE.MeshStandardMaterial({ color: app.cap, roughness: 0.6 });
     const sleeve = new THREE.MeshStandardMaterial({ color: app.undershirt ?? app.cap, roughness: 0.8 });
     const shoe = new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.5 });
-    const glove = new THREE.MeshStandardMaterial({ color: '#7a4a21', roughness: 0.6 });
+    const glove = new THREE.MeshStandardMaterial({ color: app.gloveColor ?? '#7a4a21', roughness: 0.6 });
+    const socks = new THREE.MeshStandardMaterial({ color: app.undershirt ?? app.cap, roughness: 0.85 });
+    const dark = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.6 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: app.hairColor ?? '#2a1b12', roughness: 0.9 });
 
     this.root.add(this.pelvis);
     this.pelvis.add(this.chest);
-    if (opts.mirrored) this.root.scale.x = -1;
+    this.scale = (app.heightIn ?? BASE_HEIGHT_IN) / BASE_HEIGHT_IN;
+    this.root.scale.set(this.scale * (opts.mirrored ? -1 : 1), this.scale, this.scale);
 
-    const hips = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.55, 0.62), pants);
+    const hips = new THREE.Mesh(new THREE.BoxGeometry(1.0 * bw, 0.55, 0.62 * bw), pants);
     hips.position.y = 0.05;
     hips.castShadow = true;
     this.pelvis.add(hips);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(1.02 * bw, 0.1, 0.64 * bw), dark);
+    belt.position.y = 0.3;
+    this.pelvis.add(belt);
 
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.52, 1.55, 14), jersey);
+    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.72 * bw, 0.52 * bw, 1.55, 16), jersey);
     torso.scale.z = 0.62;
     torso.position.y = 0.95;
     torso.castShadow = true;
     this.chest.add(torso);
+    // Rounded shoulders.
+    const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.72 * bw, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), jersey);
+    shoulders.scale.set(1, 0.32, 0.62);
+    shoulders.position.y = 1.7;
+    this.chest.add(shoulders);
+
+    if (app.number !== undefined) {
+      const plate = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.95 * bw, 0.95),
+        new THREE.MeshStandardMaterial({ map: backPlateTexture(app.backName, app.number, app.undershirt ?? app.cap), transparent: true, roughness: 0.8 }),
+      );
+      plate.position.set(0, 1.05, -0.62 * 0.62 * bw - 0.03);
+      plate.rotation.y = Math.PI;
+      // Keep the lettering readable on mirrored (left-handed) models.
+      if (opts.mirrored) plate.scale.x = -1;
+      this.chest.add(plate);
+    }
 
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.3, 8), skin);
     neck.position.y = 1.85;
@@ -174,6 +239,62 @@ export class Humanoid {
     head.castShadow = true;
     this.chest.add(head);
 
+    // Face: eyes, eye black, facial hair. The face points +z.
+    const eyeGeo = new THREE.SphereGeometry(0.045, 8, 6);
+    for (const x of [-0.13, 0.13]) {
+      const eye = new THREE.Mesh(eyeGeo, dark);
+      eye.position.set(x, 2.31, 0.33);
+      this.chest.add(eye);
+      if (app.eyeBlack) {
+        const eb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.02), dark);
+        eb.position.set(x, 2.22, 0.36);
+        this.chest.add(eb);
+      }
+    }
+    const fh = app.facialHair ?? 'none';
+    if (fh === 'beard' || fh === 'stubble') {
+      const beard = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 16, 10, 0, Math.PI, Math.PI * 0.55, Math.PI * 0.4),
+        fh === 'stubble' ? new THREE.MeshStandardMaterial({ color: app.hairColor ?? '#2a1b12', transparent: true, opacity: 0.35 }) : hairMat,
+      );
+      beard.scale.set(0.97, 1.12, 1.02);
+      beard.position.y = 2.25;
+      this.chest.add(beard);
+    }
+    if (fh === 'goatee') {
+      const g = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), hairMat);
+      g.scale.set(1, 1.3, 0.6);
+      g.position.set(0, 1.95, 0.3);
+      this.chest.add(g);
+    }
+    if (fh === 'mustache' || fh === 'goatee' || fh === 'beard') {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.05, 0.05), hairMat);
+      m.position.set(0, 2.12, 0.37);
+      this.chest.add(m);
+    }
+
+    // Hair shows below the cap at the back and sides.
+    const hair = app.hair ?? 'short';
+    if (hair !== 'none') {
+      const r = hair === 'buzz' ? 0.39 : hair === 'curly' ? 0.44 : 0.415;
+      const band = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 10, Math.PI, Math.PI, Math.PI * 0.3, Math.PI * 0.35), hairMat);
+      band.scale.set(0.97, 1.1, 1.02);
+      band.position.y = 2.25;
+      this.chest.add(band);
+      if (hair === 'long') {
+        const tail = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.62, 0.12), hairMat);
+        tail.position.set(0, 1.92, -0.3);
+        this.chest.add(tail);
+      }
+      if (hair === 'curly') {
+        for (const [x, z] of [[-0.3, -0.18], [0.3, -0.18], [0, -0.36], [-0.18, -0.32], [0.18, -0.32]]) {
+          const c = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6), hairMat);
+          c.position.set(x, 2.08, z);
+          this.chest.add(c);
+        }
+      }
+    }
+
     const capTop = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), cap);
     capTop.position.y = 2.33;
     this.chest.add(capTop);
@@ -182,14 +303,14 @@ export class Humanoid {
     brim.scale.z = 1.2;
     this.chest.add(brim);
 
-    this.limbs.thighR = segment(0.27, 0.2, pants);
-    this.limbs.shinR = segment(0.2, 0.15, pants);
-    this.limbs.thighL = segment(0.27, 0.2, pants);
-    this.limbs.shinL = segment(0.2, 0.15, pants);
-    this.limbs.upperR = segment(0.17, 0.14, sleeve);
-    this.limbs.foreR = segment(0.13, 0.11, skin);
-    this.limbs.upperL = segment(0.17, 0.14, sleeve);
-    this.limbs.foreL = segment(0.13, 0.11, skin);
+    this.limbs.thighR = segment(0.27 * lw, 0.2 * lw, pants);
+    this.limbs.shinR = segment(0.2 * lw, 0.15 * lw, socks);
+    this.limbs.thighL = segment(0.27 * lw, 0.2 * lw, pants);
+    this.limbs.shinL = segment(0.2 * lw, 0.15 * lw, socks);
+    this.limbs.upperR = segment(0.17 * lw, 0.14 * lw, sleeve);
+    this.limbs.foreR = segment(0.13 * lw, 0.11 * lw, skin);
+    this.limbs.upperL = segment(0.17 * lw, 0.14 * lw, sleeve);
+    this.limbs.foreL = segment(0.13 * lw, 0.11 * lw, skin);
     for (const m of Object.values(this.limbs)) this.root.add(m);
 
     for (const name of ['kneeR', 'kneeL', 'elbowR', 'elbowL']) {
@@ -215,7 +336,7 @@ export class Humanoid {
 
     if (opts.bat) {
       this.bat = new THREE.Group();
-      const wood = new THREE.MeshStandardMaterial({ color: '#d8b27a', roughness: 0.45 });
+      const wood = new THREE.MeshStandardMaterial({ color: app.batColor ?? '#d8b27a', roughness: 0.45 });
       const pts = [
         new THREE.Vector2(0.07, 0),
         new THREE.Vector2(0.06, 0.05),

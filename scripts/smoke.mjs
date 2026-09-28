@@ -52,6 +52,32 @@ try {
   );
   console.log(`headless fps: ${fps.toFixed(1)}`);
   await page.screenshot({ path: `${OUT}/01-menu.png` });
+
+  // --- Create a player through the real UI ---
+  await page.click('[data-a=create]');
+  await page.fill('#first-name', 'Jamie');
+  await page.fill('#last-name', 'Rivera');
+  await page.fill('#number', '17');
+  await page.click('#position [data-v=TW]');
+  await page.click('#hit-spot [data-v=CF]');
+  await page.click('[data-arch=power]');
+  await page.click('[data-arch=flamethrower]');
+  for (let i = 0; i < 5; i++) await page.click('[data-a=plus-power]');
+  for (let i = 0; i < 4; i++) await page.click('[data-a=plus-velocity]');
+  await page.click('#hair [data-v=long]');
+  await page.click('#facial-hair [data-v=beard]');
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/01b-creator.png` });
+  await page.click('[data-a=save]');
+  await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${OUT}/01c-home.png` });
+  await page.reload();
+  await page.waitForFunction(() => window.__game !== undefined);
+  await page.waitForTimeout(1500);
+  const savedName = await page.textContent('.pc-name');
+  check(savedName?.includes('Rivera'), `creator: player saved and loaded after reload (${savedName})`);
+  const ovr = await page.textContent('.pc-ovr');
+  check(/\d+/.test(ovr ?? ''), 'creator: player card shows an overall rating');
   // Software rendering is slow; slow the game down so every phase gets rendered frames.
   const slow = Math.min(1, Math.max(0.1, fps / 40));
   await page.evaluate((s) => window.__game.setTimeScale(s), slow);
@@ -140,7 +166,7 @@ try {
 
   // DH: recap screen, then an at-bat.
   await page.evaluate(() => window.__game.setTimeScale(1));
-  await page.evaluate(() => window.__game.startGame({ role: 'DH', bats: 'R', throws: 'R', difficulty: 'rookie', innings: 3, home: true }));
+  await page.evaluate(() => window.__game.startGame({ profile: window.__game.testProfile('DH'), today: 'field', difficulty: 'rookie', innings: 3, home: true }));
   await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap', null, { timeout: 30000 });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${OUT}/10-game-recap.png` });
@@ -159,7 +185,7 @@ try {
   await page.screenshot({ path: `${OUT}/12-box-score.png` });
 
   // P: pitch live until the half inning ends, then sim.
-  await page.evaluate(() => window.__game.startGame({ role: 'P', bats: 'R', throws: 'R', difficulty: 'pro', innings: 3, home: false }));
+  await page.evaluate(() => window.__game.startGame({ profile: window.__game.testProfile('P'), today: 'pitch', difficulty: 'pro', innings: 3, home: false }));
   await page.evaluate(() => window.__game.setAuto(true));
   await page.waitForFunction(() => window.__game.snapshot()?.moment === 'pitch', null, { timeout: 60000 });
   await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap' || window.__game.snapshot()?.moment === 'final', null, { timeout: 240000 });
@@ -167,8 +193,21 @@ try {
   await page.evaluate(() => window.__game.simToEnd());
   await finalBox('P');
 
+  // Two-way pitching day (your saved player): you pitch and bat.
+  await page.evaluate(() => window.__game.startGame({ today: 'pitch', difficulty: 'rookie', innings: 3, home: true }));
+  await page.evaluate(() => window.__game.setAuto(true));
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'pitch', null, { timeout: 60000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `${OUT}/12b-two-way-pitching.png` });
+  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'bat' || window.__game.snapshot()?.moment === 'final', null, { timeout: 300000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: `${OUT}/12c-two-way-batting.png` });
+  await page.evaluate(() => window.__game.simToEnd());
+  const tw = await finalBox('Two-way');
+  check(tw.userLine.includes('IP') && /\d-\d/.test(tw.userLine), `Two-way: pitched and batted (${tw.userLine})`);
+
   // CF: wait for a ball hit to you, field it automatically.
-  await page.evaluate(() => window.__game.startGame({ role: 'CF', bats: 'L', throws: 'R', difficulty: 'pro', innings: 9, home: true, seed: 11 }));
+  await page.evaluate(() => window.__game.startGame({ profile: window.__game.testProfile('CF'), today: 'field', difficulty: 'pro', innings: 9, home: true, seed: 11 }));
   await page.evaluate(() => window.__game.setAuto(true));
   const gotField = await page
     .waitForFunction(() => window.__game.snapshot()?.moment === 'field', null, { timeout: 400000 })

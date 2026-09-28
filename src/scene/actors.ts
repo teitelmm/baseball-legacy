@@ -15,6 +15,7 @@ import {
   throwPose,
   UMPIRE_POSE,
 } from './animations';
+import type { PlayerProfile } from '../sim/profile';
 import { Humanoid, type Appearance } from './humanoid';
 
 export const BATTER_OFFSET = 2.6; // ft from the plate center to the batter's root
@@ -23,8 +24,41 @@ export const CATCHER_ROOT_Z = CATCHER_Z + 1.0;
 const UMPIRE: Appearance = { jersey: '#1b2230', pants: '#59606b', skin: '#e0b48f', cap: '#111111' };
 const SKINS = ['#c68d62', '#8d5a3b', '#e0b48f', '#a86f4c', '#f0c8a0', '#6b4430'];
 
+const HAIRS: Array<Appearance['hair']> = ['short', 'buzz', 'short', 'curly', 'none', 'short', 'long'];
+const FACIAL: Array<Appearance['facialHair']> = ['none', 'none', 'stubble', 'beard', 'none', 'goatee', 'mustache'];
+
+/** A generic player for a team: varied skin, hair and build, with a number on the back. */
 export function teamAppearance(c: TeamColors, i = 0): Appearance {
-  return { jersey: c.jersey, pants: c.pants, cap: c.cap, undershirt: c.accent, skin: SKINS[i % SKINS.length] };
+  return {
+    jersey: c.jersey,
+    pants: c.pants,
+    cap: c.cap,
+    undershirt: c.accent,
+    skin: SKINS[i % SKINS.length],
+    hair: HAIRS[i % HAIRS.length],
+    facialHair: FACIAL[(i * 3) % FACIAL.length],
+    build: i % 4 === 3 ? 'stocky' : i % 5 === 1 ? 'slim' : 'athletic',
+    heightIn: 70 + ((i * 5) % 8),
+    number: [2, 5, 8, 11, 17, 22, 24, 27, 31, 34, 44, 51][i % 12],
+  };
+}
+
+/** Your player's look (from the player creator). */
+export function profileLook(p: PlayerProfile): Partial<Appearance> {
+  const a = p.appearance;
+  return {
+    skin: a.skin,
+    hair: a.hair,
+    hairColor: a.hairColor,
+    facialHair: a.facialHair,
+    build: a.build,
+    heightIn: a.heightIn,
+    eyeBlack: a.eyeBlack,
+    batColor: a.batColor,
+    gloveColor: a.gloveColor,
+    number: p.number,
+    backName: p.lastName,
+  };
 }
 
 function moundY(x: number, z: number): number {
@@ -54,6 +88,7 @@ export class FieldActors {
   private offense: TeamColors;
   private defense: TeamColors;
   private batterBats: Handedness = 'R';
+  private pitcherKey = 'R|';
   private pitcherThrows: Handedness = 'R';
 
   constructor(scene: THREE.Scene, offense: TeamColors, defense: TeamColors) {
@@ -93,6 +128,7 @@ export class FieldActors {
   }
 
   private buildDefense(): void {
+    this.pitcherKey = `${this.pitcherThrows}|`;
     for (const m of this.fielders.values()) this.group.remove(m.model.root);
     this.fielders.clear();
     FIELD_POSITIONS.forEach((pos, i) => {
@@ -115,22 +151,36 @@ export class FieldActors {
     }
   }
 
-  setPitcherHand(throws: Handedness): void {
-    if (throws === this.pitcherThrows) return;
+  /** Set who's pitching (handedness and, for you, your look). */
+  setPitcherHand(throws: Handedness, look: Partial<Appearance> | null = null): void {
+    const key = `${throws}|${look ? JSON.stringify(look) : ''}`;
+    if (key === this.pitcherKey) return;
+    this.pitcherKey = key;
     this.pitcherThrows = throws;
     const old = this.fielders.get('P')!;
     this.group.remove(old.model.root);
-    const model = new Humanoid({ ...teamAppearance(this.defense, 0), gloveHand: 'L' }, { mirrored: throws === 'L' });
+    const model = new Humanoid({ ...teamAppearance(this.defense, 0), ...look, gloveHand: 'L' }, { mirrored: throws === 'L' });
     this.group.add(model.root);
     this.fielders.set('P', { model, phase: 0, lastX: 0, lastZ: 0, throwAt: -1 });
     this.resetDefense();
   }
 
-  setBatter(bats: Handedness, index = 0): void {
+  /** Give one fielder a specific look (your outfielder). */
+  setFielderLook(pos: FieldPosition, look: Partial<Appearance>): void {
+    const old = this.fielders.get(pos)!;
+    this.group.remove(old.model.root);
+    const i = FIELD_POSITIONS.indexOf(pos);
+    const model = new Humanoid({ ...teamAppearance(this.defense, i), ...look, gloveHand: 'L' });
+    this.group.add(model.root);
+    this.fielders.set(pos, { model, phase: i, lastX: 0, lastZ: 0, throwAt: -1 });
+    this.resetDefense();
+  }
+
+  setBatter(bats: Handedness, index = 0, look: Partial<Appearance> | null = null): void {
     if (this.batter) this.group.remove(this.batter.root);
     this.batterBats = bats;
     const lefty = bats === 'L';
-    this.batter = new Humanoid({ ...teamAppearance(this.offense, index), gloveHand: null }, { bat: true, mirrored: lefty });
+    this.batter = new Humanoid({ ...teamAppearance(this.offense, index), ...look, gloveHand: null }, { bat: true, mirrored: lefty });
     this.batter.root.position.set(lefty ? BATTER_OFFSET : -BATTER_OFFSET, 0, -0.4);
     this.batter.root.rotation.y = lefty ? -Math.PI / 2 : Math.PI / 2;
     this.batter.apply(BATTER_STANCE);

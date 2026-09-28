@@ -471,22 +471,23 @@ export class Game {
   /** Your line so far, e.g. "1-3, 2B, RBI" or "4.1 IP, 2 R, 5 K". */
   userLine(): string {
     if (!this.userId) return '';
+    const parts: string[] = [];
     for (const side of ['away', 'home'] as const) {
       const pl = this.box[side].pitching[this.userId];
-      if (pl) return `${Math.floor(pl.outs / 3)}.${pl.outs % 3} IP, ${pl.h} H, ${pl.r} R, ${pl.bb} BB, ${pl.k} K`;
+      if (pl) parts.push(`${Math.floor(pl.outs / 3)}.${pl.outs % 3} IP, ${pl.h} H, ${pl.r} R, ${pl.bb} BB, ${pl.k} K`);
       const bl = this.box[side].batting[this.userId];
       if (bl) {
-        const parts = [`${bl.h}-${bl.ab}`];
-        if (bl.doubles) parts.push(bl.doubles > 1 ? `${bl.doubles} 2B` : '2B');
-        if (bl.triples) parts.push('3B');
-        if (bl.hr) parts.push(bl.hr > 1 ? `${bl.hr} HR` : 'HR');
-        if (bl.rbi) parts.push(bl.rbi > 1 ? `${bl.rbi} RBI` : 'RBI');
-        if (bl.bb) parts.push(bl.bb > 1 ? `${bl.bb} BB` : 'BB');
-        if (bl.k) parts.push(bl.k > 1 ? `${bl.k} K` : 'K');
-        return parts.join(', ');
+        const b = [`${bl.h}-${bl.ab}`];
+        if (bl.doubles) b.push(bl.doubles > 1 ? `${bl.doubles} 2B` : '2B');
+        if (bl.triples) b.push('3B');
+        if (bl.hr) b.push(bl.hr > 1 ? `${bl.hr} HR` : 'HR');
+        if (bl.rbi) b.push(bl.rbi > 1 ? `${bl.rbi} RBI` : 'RBI');
+        if (bl.bb) b.push(bl.bb > 1 ? `${bl.bb} BB` : 'BB');
+        if (bl.k) b.push(bl.k > 1 ? `${bl.k} K` : 'K');
+        parts.push(b.join(', '));
       }
     }
-    return '';
+    return parts.join(' · ');
   }
 }
 

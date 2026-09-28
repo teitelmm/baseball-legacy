@@ -20,7 +20,7 @@ import { BATTER_STANCE, batterLoadKeys, batterSwingKeys, catcherPose, pitcherKey
 import { BATTER_OFFSET, CATCHER_ROOT_Z, FieldActors } from '../scene/actors';
 import { BallView } from '../scene/ballView';
 import type { CameraRig } from '../scene/cameraRig';
-import { samplePose, type Keyframes } from '../scene/humanoid';
+import { samplePose, type Appearance, type Keyframes } from '../scene/humanoid';
 import { ZoneOverlay } from '../scene/zoneOverlay';
 import type { Hud, PitchLogEntry } from '../ui/hud';
 import { LivePlay } from './livePlay';
@@ -43,6 +43,9 @@ export interface AtBatHost {
   apply(ev: PitchEvent, pitchMph: number): PitchOutcome;
   refreshHud(hud: Hud): void;
   nameOf(id: string): string;
+  /** Your look, when you're the batter / pitcher right now. */
+  batterLook?(): Partial<Appearance> | null;
+  pitcherLook?(): Partial<Appearance> | null;
   /** Called after each pitch's result is shown. Return false when the live moment is over. */
   afterPitch(paEnded: boolean): boolean;
 }
@@ -184,9 +187,9 @@ export class AtBatSession {
     this.batter = b.batter;
     this.pitcher = p;
     this.actors.setTeams(this.host.offense(), this.host.defense());
-    this.actors.setPitcherHand(p.throws);
+    this.actors.setPitcherHand(p.throws, this.host.pitcherLook?.() ?? null);
     if (newBatter) {
-      this.actors.setBatter(b.batter.bats, b.index);
+      this.actors.setBatter(b.batter.bats, b.index, this.host.batterLook?.() ?? null);
       this.prevPitchMph = null;
     }
   }
@@ -370,7 +373,7 @@ export class AtBatSession {
 
   private recordSwing(at: number, type: SwingType, pci: PlateLoc, result: SwingResult): void {
     const contactZ = BATTER_OFFSET + (this.batter.bats === 'R' ? pci.x : -pci.x);
-    this.pitch!.swing = { at, type, pci, result, keys: batterSwingKeys(contactZ, pci.y) };
+    this.pitch!.swing = { at, type, pci, result, keys: batterSwingKeys(contactZ / this.actors.batter.scale, pci.y / this.actors.batter.scale) };
     this.sfx.whoosh();
   }
 
@@ -393,7 +396,7 @@ export class AtBatSession {
     );
     const at = p.arrivalAt - SWING_TIME_MS + d.input.timingErrorMs;
     const contactZ = BATTER_OFFSET + (this.batter.bats === 'R' ? d.input.pci.x : -d.input.pci.x);
-    p.swing = { at, type: d.input.type, pci: d.input.pci, result, keys: batterSwingKeys(contactZ, d.input.pci.y) };
+    p.swing = { at, type: d.input.type, pci: d.input.pci, result, keys: batterSwingKeys(contactZ / this.actors.batter.scale, d.input.pci.y / this.actors.batter.scale) };
   }
 
   /** The ball reaches the plate: contact, or it carries on to the catcher. */

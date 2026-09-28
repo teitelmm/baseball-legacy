@@ -11,6 +11,9 @@ import type { PlaySetup } from '../sim/playSim';
 import { CPU_TEAM_STYLES, USER_TEAM_STYLE } from '../sim/team';
 import type { Hud } from '../ui/hud';
 import type { AtBatHost, Role } from './atBatSession';
+import { displayName, type PlayerProfile } from '../sim/profile';
+import { profileLook } from '../scene/actors';
+import type { Appearance } from '../scene/humanoid';
 
 export interface PracticeOptions {
   role: Role;
@@ -36,7 +39,10 @@ export class PracticeHost implements AtBatHost {
   private cpuPitcher: Pitcher | null = null;
   private names = new Map<string, string>();
 
-  constructor(readonly opts: PracticeOptions) {
+  constructor(
+    readonly opts: PracticeOptions,
+    private readonly profile: PlayerProfile | null = null,
+  ) {
     this.role = opts.role;
     this.difficulty = DIFFICULTIES[opts.difficulty];
     this.rng = new Rng(opts.seed ?? Date.now());
@@ -70,8 +76,9 @@ export class PracticeHost implements AtBatHost {
     const i = this.paIndex;
     const id = `pa-${i}`;
     if (this.role === 'batting') {
-      this.names.set(id, 'You');
-      return { id, index: 0, batter: { name: 'You', bats: this.opts.userHand, ratings: { ...tuning.userBatter } } };
+      const name = this.userName;
+      this.names.set(id, name);
+      return { id, index: 0, batter: { name, bats: this.opts.userHand, ratings: { ...tuning.userBatter } } };
     }
     const r = tuning.cpuRatingOverride || this.difficulty.cpuRating;
     const jitter = () => Math.max(20, Math.min(99, r + this.rng.gaussian(0, 8)));
@@ -87,7 +94,19 @@ export class PracticeHost implements AtBatHost {
 
   pitcher(): Pitcher {
     if (this.cpuPitcher) return this.cpuPitcher;
-    return { name: 'You', throws: this.opts.userHand, ratings: { ...tuning.userPitcher }, repertoire: [...PITCH_ORDER] };
+    return { name: this.userName, throws: this.opts.userHand, ratings: { ...tuning.userPitcher }, repertoire: [...PITCH_ORDER] };
+  }
+
+  private get userName(): string {
+    return this.profile ? displayName(this.profile) : 'You';
+  }
+
+  batterLook(): Partial<Appearance> | null {
+    return this.role === 'batting' && this.profile ? profileLook(this.profile) : null;
+  }
+
+  pitcherLook(): Partial<Appearance> | null {
+    return this.role === 'pitching' && this.profile ? profileLook(this.profile) : null;
   }
 
   state(): GameState {

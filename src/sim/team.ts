@@ -143,43 +143,51 @@ export type UserRole = 'LF' | 'CF' | 'RF' | 'DH' | 'P';
 
 export interface UserPlayerSpec {
   name: string;
+  number: number;
+  /** Today's position: a hitting spot, or P. */
   role: UserRole;
+  /** On a pitching day, a two-way player also bats (as the DH). */
+  alsoBats?: boolean;
   bats: Handedness;
   throws: Handedness;
   batting: BattingRatings;
-  pitching: PitchingRatings;
+  fielding: FieldingRatings;
+  pitching: PitchingRatings & { stamina: number };
+  repertoire?: PitchTypeId[];
 }
 
-/** Your team: a generated roster with you in your chosen spot (batting 3rd if you hit). */
+/** Your team: a generated roster with you in your spot (batting 3rd if you hit). */
 export function makeUserTeam(rng: Rng, rating: number, spec: UserPlayerSpec): { team: Team; userId: string } {
   const team = makeTeam({ id: 'user', rng, rating, style: USER_TEAM_STYLE });
   const userId = 'user-you';
+  const hits = spec.role !== 'P' || !!spec.alsoBats;
   const you: Player = {
     id: userId,
     name: spec.name,
-    number: 7,
+    number: spec.number,
     bats: spec.bats,
     throws: spec.throws,
     pos: spec.role,
-    batting: spec.role === 'P' ? { contact: 15, power: 15, eye: 15 } : { ...spec.batting },
-    fielding: { speed: 72, arm: 72, glove: 72 },
+    batting: hits ? { ...spec.batting } : { contact: 15, power: 15, eye: 15 },
+    fielding: { ...spec.fielding },
     isUser: true,
   };
   if (spec.role === 'P') {
-    you.pitching = { ...spec.pitching, stamina: 80 };
-    you.repertoire = ['FF', 'SI', 'SL', 'CU', 'CH'];
+    you.pitching = { ...spec.pitching };
+    you.repertoire = spec.repertoire ?? ['FF', 'SI', 'SL', 'CU', 'CH'];
     const replaced = team.pitchers[0];
     delete team.players[replaced];
     team.pitchers[0] = userId;
-  } else {
-    // Replace the player at your position and bat 3rd.
-    const replacedId =
-      spec.role === 'DH' ? team.lineup.find((id) => team.players[id].pos === 'DH')! : team.defense[spec.role];
+  }
+  if (hits) {
+    // Replace the player at your spot (the DH on a two-way pitching day) and bat 3rd.
+    const spot = spec.role === 'P' || spec.role === 'DH' ? 'DH' : spec.role;
+    const replacedId = spot === 'DH' ? team.lineup.find((id) => team.players[id].pos === 'DH')! : team.defense[spot];
     delete team.players[replacedId];
     const order = team.lineup.filter((id) => id !== replacedId);
     order.splice(2, 0, userId);
     team.lineup = order;
-    if (spec.role !== 'DH') team.defense[spec.role] = userId;
+    if (spot !== 'DH') team.defense[spot] = userId;
   }
   team.players[userId] = you;
   return { team, userId };

@@ -11,7 +11,12 @@ import { CameraRig } from './scene/cameraRig';
 import { buildStadium } from './scene/stadium';
 import { createDebugPanel } from './ui/debugPanel';
 import { Hud } from './ui/hud';
-import { Menu, PauseMenu } from './ui/menu';
+import { PauseMenu } from './ui/menu';
+import { Home } from './ui/home';
+import { ProfileStore } from './core/storage';
+import { PlayerPreview } from './scene/preview';
+import { finalRatings, newProfile, setPositions, type PlayerProfile } from './sim/profile';
+import type { UserRole } from './sim/team';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const uiRoot = document.getElementById('ui')!;
@@ -46,13 +51,22 @@ function stopCurrent(): void {
   current = null;
 }
 
-function startPractice(opts: PracticeOptions): void {
+function startPractice(opts: PracticeOptions, profile: PlayerProfile | null = home.activeProfile): void {
   sfx.unlock();
   stopCurrent();
   menu.hide();
   pause.hide();
   clock.setTimeScale(tuning.timeScale);
-  current = { kind: 'practice', session: new AtBatSession(new PracticeHost(opts), deps), opts };
+  current = { kind: 'practice', session: new AtBatSession(new PracticeHost(opts, profile), deps), opts };
+}
+
+/** Your player's ratings feed the tuning panel (which can still override them for testing). */
+function useProfile(p: PlayerProfile | null): void {
+  if (!p) return;
+  const r = finalRatings(p);
+  Object.assign(tuning.userBatter, r.batting);
+  Object.assign(tuning.userPitcher, { velocity: r.pitching.velocity, control: r.pitching.control, movement: r.pitching.movement });
+  gui?.controllersRecursive().forEach((c) => c.updateDisplay());
 }
 
 function startGame(opts: GameSetupOptions): void {
@@ -83,7 +97,12 @@ function setPaused(p: boolean): void {
   }
 }
 
-const menu = new Menu(uiRoot, { practice: startPractice, game: startGame });
+const store = new ProfileStore();
+const preview = new PlayerPreview(scene);
+// eslint-disable-next-line prefer-const
+let gui: ReturnType<typeof createDebugPanel> | undefined;
+const home = new Home(uiRoot, { practice: startPractice, game: startGame, profileChanged: useProfile }, store, preview);
+const menu = home;
 const pause = new PauseMenu(uiRoot, {
   resume: () => setPaused(false),
   restart: () => {
@@ -99,7 +118,7 @@ const pause = new PauseMenu(uiRoot, {
   },
 });
 
-const gui = createDebugPanel((key) => {
+gui = createDebugPanel((key) => {
   if (key === 'timeScale') {
     if (!pause.visible) clock.setTimeScale(tuning.timeScale);
   } else {
@@ -109,7 +128,7 @@ const gui = createDebugPanel((key) => {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') setPaused(!pause.visible);
-  if (e.key === '`') gui._hidden ? gui.show() : gui.hide();
+  if (e.key === '`') gui!._hidden ? gui!.show() : gui!.hide();
 });
 
 window.addEventListener('resize', () => {
@@ -118,7 +137,12 @@ window.addEventListener('resize', () => {
 });
 
 // Idle menu camera: slow orbit around the infield.
-function menuCamera(now: number): void {
+function menuCamera(now: number, dt: number): void {
+  // Home screen and creator: your player on a turntable.
+  if (home.visible && preview.visible) {
+    preview.update(dt, now, cam.camera, home.panelFraction);
+    return;
+  }
   const a = now / 12000;
   cam.camera.position.set(Math.sin(a) * 160, 70, Math.cos(a) * 160 - 90);
   cam.camera.fov = 45;
@@ -132,17 +156,23 @@ function frame(): void {
   const dt = Math.min(0.35, (real - lastReal) / 1000) * (pause.visible ? 0 : tuning.timeScale);
   lastReal = real;
   if (current) current.session.update(clock.now(), dt);
-  else menuCamera(real);
+  else menuCamera(real, dt);
   renderer.render(scene, cam.camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
+function testProfile(primary: UserRole, secondary: UserRole | null): PlayerProfile {
+  return setPositions({ ...newProfile('test'), firstName: 'Test', lastName: 'Player' }, primary, secondary);
+}
+
 // Test hook for automated smoke tests (only with ?test in the URL).
 if (new URLSearchParams(location.search).has('test')) {
   (window as unknown as { __game: unknown }).__game = {
     start: (opts: PracticeOptions) => startPractice({ seed: 42, ...opts }),
-    startGame: (opts: GameSetupOptions) => startGame({ seed: 7, ...opts }),
+    startGame: (opts: Omit<GameSetupOptions, 'profile'> & { profile?: PlayerProfile }) =>
+      startGame({ seed: 7, profile: opts.profile ?? home.activeProfile ?? testProfile('CF', null), ...opts } as GameSetupOptions),
+    testProfile: (primary: UserRole, secondary: UserRole | null = null) => testProfile(primary, secondary),
     setAuto: (v: boolean, lateMs = 0) => {
       if (current?.kind === 'practice') {
         current.session.auto = v;

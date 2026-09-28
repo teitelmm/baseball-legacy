@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { DIFFICULTIES, type Difficulty, type DifficultyName } from '../core/constants';
 import { Rng } from '../core/rng';
 import { tuning } from '../core/tuning';
-import type { Handedness, Pitcher, Team, TeamColors } from '../core/types';
+import type { Pitcher, Team, TeamColors } from '../core/types';
 import type { GameState, PitchEvent, PitchOutcome } from '../sim/atBat';
 import type { BattedBallPath } from '../sim/battedBall';
 import { Game, type UserMoment } from '../sim/gameSim';
 import type { PlaySetup } from '../sim/playSim';
+import { displayName, finalRatings, hittingSpot, isPitcher, isTwoWay, type PlayerProfile } from '../sim/profile';
 import { CPU_TEAM_STYLES, makeTeam, makeUserTeam, type UserRole } from '../sim/team';
-import { FieldActors } from '../scene/actors';
+import { FieldActors, profileLook } from '../scene/actors';
+import type { Appearance } from '../scene/humanoid';
 import { BallView } from '../scene/ballView';
 import { GameScreens, type MomentKind } from '../ui/gameScreens';
 import type { Hud } from '../ui/hud';
@@ -16,9 +18,9 @@ import { AtBatSession, type AtBatHost, type Role, type SessionDeps } from './atB
 import { LivePlay } from './livePlay';
 
 export interface GameSetupOptions {
-  role: UserRole;
-  bats: Handedness;
-  throws: Handedness;
+  profile: PlayerProfile;
+  /** Two-way players: pitch (and bat) today, or play the field. Others follow their position. */
+  today: 'pitch' | 'field';
   difficulty: DifficultyName;
   innings: number;
   /** Your team bats second. */
@@ -85,6 +87,14 @@ class GameHost implements AtBatHost {
     return this.gs.nameOf(id);
   }
 
+  batterLook(): Partial<Appearance> | null {
+    return this.gs.lookFor(this.g.batter.id);
+  }
+
+  pitcherLook(): Partial<Appearance> | null {
+    return this.gs.lookFor(this.g.currentPitcher.id);
+  }
+
   afterPitch(paEnded: boolean): boolean {
     if (this.g.over) return false;
     if (this.role === 'batting') return !paEnded;
@@ -123,13 +133,19 @@ export class GameSession {
   private newGame(): void {
     const d = this.difficulty;
     const cpuRating = tuning.cpuRatingOverride || d.cpuRating;
+    const p = this.opts.profile;
+    const r = finalRatings(p);
     const { team, userId } = makeUserTeam(this.rng, 62, {
-      name: 'You',
-      role: this.opts.role,
-      bats: this.opts.bats,
-      throws: this.opts.throws,
+      name: displayName(p),
+      number: p.number,
+      role: this.todayRole,
+      alsoBats: this.todayRole === 'P' && isTwoWay(p),
+      bats: p.bats,
+      throws: p.throws,
+      // The tuning panel starts from your ratings and can override them for testing.
       batting: { ...tuning.userBatter },
-      pitching: { ...tuning.userPitcher },
+      fielding: r.fielding,
+      pitching: { ...tuning.userPitcher, stamina: r.pitching.stamina },
     });
     const cpu = makeTeam({ id: 'cpu', rng: this.rng, rating: cpuRating, style: this.rng.pick(CPU_TEAM_STYLES) });
     // Opposing pitchers' stuff follows the difficulty (slower, flatter on Rookie).
@@ -152,6 +168,22 @@ export class GameSession {
     this.advance();
   }
 
+  /** Where you play today. */
+  get todayRole(): UserRole {
+    const p = this.opts.profile;
+    if (this.opts.today === 'pitch' && isPitcher(p)) return 'P';
+    return hittingSpot(p) ?? 'P';
+  }
+
+  get todayLabel(): string {
+    return this.todayRole === 'P' && isTwoWay(this.opts.profile) ? 'P/DH' : this.todayRole;
+  }
+
+  /** Your look, for a player id (null for everyone else). */
+  lookFor(id: string): Partial<Appearance> | null {
+    return id === this.userId ? profileLook(this.opts.profile) : null;
+  }
+
   nameOf(id: string): string {
     return this.game.home.players[id]?.name ?? this.game.away.players[id]?.name ?? '';
   }
@@ -172,7 +204,7 @@ export class GameSession {
       count: st.count,
       bases: st.bases,
       userName: you.name,
-      userPos: this.opts.role,
+      userPos: this.todayLabel,
       userLine: g.userLine(),
       stamina: pitching ? g.stamina() : null,
       pitches: pitching ? g.pitchCount() : 0,
@@ -219,6 +251,8 @@ export class GameSession {
       const actors = new FieldActors(deps.scene, g.battingTeam.colors, g.fieldingTeam.colors);
       actors.setPitcherHand(g.currentPitcher.throws);
       actors.setBatter(g.batter.bats);
+      const userPos = g.userFieldPosition();
+      if (userPos) actors.setFielderLook(userPos, profileLook(this.opts.profile));
       actors.setBaseRunners(g.state.bases);
       const ball = new BallView(deps.scene);
       ball.setCamera(deps.cam.camera);
