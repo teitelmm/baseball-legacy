@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { DIFFICULTIES, type Difficulty, type DifficultyName } from '../core/constants';
 import { Rng } from '../core/rng';
 import { tuning } from '../core/tuning';
-import type { Pitcher, Team, TeamColors } from '../core/types';
+import { POSITION_NUMBER, type Pitcher, type Team, type TeamColors } from '../core/types';
 import type { GameState, PitchEvent, PitchOutcome } from '../sim/atBat';
 import type { BattedBallPath } from '../sim/battedBall';
 import { Game, type UserMoment } from '../sim/gameSim';
@@ -17,8 +17,20 @@ import type { Hud } from '../ui/hud';
 import { AtBatSession, type AtBatHost, type Role, type SessionDeps } from './atBatSession';
 import { LivePlay } from './livePlay';
 
+export interface SeasonMatchup {
+  home: Team;
+  away: Team;
+  rng: Rng;
+  /** Called with the finished game when you press Continue on the box score. */
+  onFinal: (game: Game, fieldingOuts: number) => void;
+  /** Heading shown on the recap, e.g. "Day 12" or "Semifinal · Game 3". */
+  label: string;
+}
+
 export interface GameSetupOptions {
   profile: PlayerProfile;
+  /** A season game: the teams come from the season instead of being generated. */
+  season?: SeasonMatchup;
   /** Two-way players: pitch (and bat) today, or play the field. Others follow their position. */
   today: 'pitch' | 'field';
   difficulty: DifficultyName;
@@ -125,12 +137,24 @@ export class GameSession {
     private readonly onAgain: () => void,
   ) {
     this.difficulty = DIFFICULTIES[opts.difficulty];
-    this.rng = new Rng(opts.seed ?? Date.now());
+    this.rng = opts.season?.rng ?? new Rng(opts.seed ?? Date.now());
     this.screens = new GameScreens(deps.uiRoot);
     this.newGame();
   }
 
+  private fieldingOuts = 0;
+
   private newGame(): void {
+    if (this.opts.season) {
+      const m = this.opts.season;
+      this.userTeam = m.home.id === 'user' ? m.home : m.away;
+      this.userId = 'user-you';
+      this.game = new Game({ home: m.home, away: m.away, innings: this.opts.innings, rng: this.rng, userId: this.userId });
+      this.deps.hud.show();
+      this.deps.hud.clearFeedback();
+      this.advance();
+      return;
+    }
     const d = this.difficulty;
     const cpuRating = tuning.cpuRatingOverride || d.cpuRating;
     const p = this.opts.profile;
@@ -236,6 +260,7 @@ export class GameSession {
       g.userLine(),
       () => this.startMoment(moment),
       () => this.simToEnd(),
+      this.opts.season?.label ?? '',
     );
   }
 
@@ -272,9 +297,11 @@ export class GameSession {
     const o = f.play.outcome!;
     const g = this.game;
     const batter = g.batter.name;
+    const userPos = g.userFieldPosition();
     g.applyPlay(o, f.exitVelo, f.mph);
     const text = o.kind === 'foul' ? 'Foul ball' : `${batter} ${o.description}`;
     const good = o.kind === 'play' && (o.batterResult === 'out' || o.batterResult === 'fc');
+    if (good && o.kind === 'play' && userPos && o.chain.includes(POSITION_NUMBER[userPos])) this.fieldingOuts += 1;
     this.deps.hud.feedback(text, '', good ? 'good' : 'neutral', 2600);
     f.play.dispose();
     f.actors.dispose(this.deps.scene);
@@ -289,7 +316,9 @@ export class GameSession {
     this.momentKind = null;
     this.deps.hud.hint('');
     this.refreshHud();
-    this.screens.showBoxScore(this.game, this.userId, this.onAgain, this.onMenu);
+    const m = this.opts.season;
+    if (m) this.screens.showBoxScore(this.game, this.userId, () => m.onFinal(this.game, this.fieldingOuts), null, { again: 'Continue', menu: '' });
+    else this.screens.showBoxScore(this.game, this.userId, this.onAgain, this.onMenu);
   }
 
   /** Simulate the rest of the game (from the recap or the pause menu). */
@@ -299,6 +328,18 @@ export class GameSession {
     this.game.drainLog();
     this.screens.hide();
     this.showFinal();
+  }
+
+  /** Season games: sim what's left and hand the result straight back (leaving still counts). */
+  finishSeasonGame(): void {
+    const m = this.opts.season;
+    if (!m) return;
+    this.disposeLive();
+    this.game.simToEnd();
+    this.game.drainLog();
+    this.screens.hide();
+    this.finished = true;
+    m.onFinal(this.game, this.fieldingOuts);
   }
 
   private disposeLive(): void {

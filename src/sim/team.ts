@@ -24,6 +24,9 @@ export const CPU_TEAM_STYLES: Array<{ name: string; abbr: string; colors: TeamCo
   { name: 'Mesa Roadrunners', abbr: 'MES', colors: { jersey: '#e9dcc2', pants: '#e9dcc2', cap: '#c2571a', accent: '#1f5c5a' } },
   { name: 'Northfield Pines', abbr: 'NFP', colors: { jersey: '#2f5d3a', pants: '#d9d6cc', cap: '#1b3322', accent: '#e0b84a' } },
   { name: 'River Valley Stars', abbr: 'RVS', colors: { jersey: '#1f2a44', pants: '#c7ccd6', cap: '#1f2a44', accent: '#e8c547' } },
+  { name: 'Ironwood Foundry', abbr: 'IRF', colors: { jersey: '#3a3f47', pants: '#8f959e', cap: '#e06a1b', accent: '#e06a1b' } },
+  { name: 'Bayshore Tides', abbr: 'BST', colors: { jersey: '#e8f1f5', pants: '#e8f1f5', cap: '#0f6e8c', accent: '#0f6e8c' } },
+  { name: 'Prairie City Comets', abbr: 'PCC', colors: { jersey: '#5b2a86', pants: '#d8d2e4', cap: '#2e1446', accent: '#f2c14e' } },
 ];
 
 export const USER_TEAM_STYLE = {
@@ -128,15 +131,29 @@ export function makeTeam(o: TeamOptions): Team {
     hitters.push(p);
     if (pos !== 'DH') defense[pos] = p.id;
   }
-  const pitchers: string[] = [];
-  for (let i = 0; i < 6; i++) {
+  // Five starters and five relievers.
+  const rotation: string[] = [];
+  const bullpen: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const starter = i < 5;
     const p = makePlayer(o.rng, o.id, 'P', o.rating, used);
-    p.pitching = pitching(o.rng, o.rating - (i === 0 ? 0 : 3), i === 0);
+    p.pitching = pitching(o.rng, o.rating - (i === 0 ? 0 : starter ? 2 : 3), starter);
     p.repertoire = repertoire(o.rng);
     players[p.id] = p;
-    pitchers.push(p.id);
+    (starter ? rotation : bullpen).push(p.id);
   }
-  return { id: o.id, name: o.style.name, abbr: o.style.abbr, colors: o.style.colors, players, lineup: battingOrder(hitters), defense, pitchers };
+  return {
+    id: o.id,
+    name: o.style.name,
+    abbr: o.style.abbr,
+    colors: o.style.colors,
+    players,
+    lineup: battingOrder(hitters),
+    defense,
+    pitchers: [rotation[0], ...bullpen],
+    rotation,
+    bullpen,
+  };
 }
 
 export type UserRole = 'LF' | 'CF' | 'RF' | 'DH' | 'P';

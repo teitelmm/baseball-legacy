@@ -72,7 +72,7 @@ export class GameScreens {
       <tbody>${row('away')}${row('home')}</tbody></table></div>`;
   }
 
-  showRecap(g: Game, log: LogEntry[], kind: MomentKind, userLine: string, onPlay: () => void, onSim: () => void): void {
+  showRecap(g: Game, log: LogEntry[], kind: MomentKind, userLine: string, onPlay: () => void, onSim: () => void, label = ''): void {
     const half = `${g.half === 'top' ? 'Top' : 'Bottom'} of the ${ordinal(g.inning)}`;
     const st = g.state.outs >= 3 ? { outs: 0, bases: [null, null, null] } : g.state;
     const situation = `${half} · ${st.outs} out${st.outs === 1 ? '' : 's'} · ${basesText(st.bases)}`;
@@ -85,7 +85,7 @@ export class GameScreens {
     const lines = log.slice(-14);
     this.el.innerHTML = `
       <div class="menu recap">
-        <div class="sub">${esc(situation)}</div>
+        <div class="sub">${label ? `${esc(label)} · ` : ''}${esc(situation)}</div>
         <h1>${MOMENT_TITLE[kind]}</h1>
         <p class="matchup-line">${matchup}${userLine ? ` · Today: <b>${esc(userLine)}</b>` : ''}</p>
         ${this.lineScore(g)}
@@ -116,7 +116,7 @@ export class GameScreens {
     });
   }
 
-  showBoxScore(g: Game, userId: string | null, onAgain: () => void, onMenu: () => void): void {
+  showBoxScore(g: Game, userId: string | null, onAgain: () => void, onMenu: (() => void) | null, labels = { again: 'Play another game', menu: 'Main menu' }): void {
     const winner = g.score.home > g.score.away ? g.home : g.away;
     const youWon = winner.id === 'user';
     const battingTable = (side: 'away' | 'home') => {
@@ -153,8 +153,8 @@ export class GameScreens {
           ${pitchingTable('away')}${pitchingTable('home')}
         </div>
         <div class="actions">
-          <button class="big primary" data-a="again">Play another game</button>
-          <button class="big" data-a="menu">Main menu</button>
+          <button class="big primary" data-a="again">${esc(labels.again)}</button>
+          ${onMenu ? `<button class="big" data-a="menu">${esc(labels.menu)}</button>` : ''}
         </div>
       </div>`;
     this.el.style.display = '';
@@ -163,9 +163,9 @@ export class GameScreens {
       this.hide();
       onAgain();
     });
-    this.el.querySelector('[data-a=menu]')!.addEventListener('click', () => {
+    this.el.querySelector('[data-a=menu]')?.addEventListener('click', () => {
       this.hide();
-      onMenu();
+      onMenu?.();
     });
   }
 }

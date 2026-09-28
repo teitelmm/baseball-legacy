@@ -15,6 +15,7 @@ import { PauseMenu } from './ui/menu';
 import { Home } from './ui/home';
 import { ProfileStore } from './core/storage';
 import { PlayerPreview } from './scene/preview';
+import { SeasonHub } from './ui/seasonHub';
 import { finalRatings, newProfile, setPositions, type PlayerProfile } from './sim/profile';
 import type { UserRole } from './sim/team';
 
@@ -73,6 +74,7 @@ function startGame(opts: GameSetupOptions): void {
   sfx.unlock();
   stopCurrent();
   menu.hide();
+  hub.hide();
   pause.hide();
   clock.setTimeScale(tuning.timeScale);
   const session = new GameSession(opts, { ...deps, uiRoot }, quitToMenu, () => startGame(opts));
@@ -90,7 +92,8 @@ function setPaused(p: boolean): void {
   if (!current) return;
   if (p) {
     clock.setTimeScale(0);
-    pause.show(current.kind === 'game' && !current.session.finished);
+    const inGame = current.kind === 'game' && !current.session.finished;
+    pause.show(inGame, current.kind === 'game' && !!current.opts.season);
   } else {
     clock.setTimeScale(tuning.timeScale);
     pause.hide();
@@ -101,15 +104,50 @@ const store = new ProfileStore();
 const preview = new PlayerPreview(scene);
 // eslint-disable-next-line prefer-const
 let gui: ReturnType<typeof createDebugPanel> | undefined;
-const home = new Home(uiRoot, { practice: startPractice, game: startGame, profileChanged: useProfile }, store, preview);
+const home = new Home(
+  uiRoot,
+  {
+    practice: startPractice,
+    game: startGame,
+    profileChanged: useProfile,
+    season: (slot, profile, difficulty) => {
+      home.hide();
+      hub.open(slot, profile, difficulty);
+    },
+  },
+  store,
+  preview,
+);
 const menu = home;
+const hub = new SeasonHub(uiRoot, store, {
+  play: startGame,
+  leaveGame: () => {
+    stopCurrent();
+    pause.hide();
+    clock.setTimeScale(tuning.timeScale);
+    hub.show();
+  },
+  home: () => {
+    hub.hide();
+    home.show();
+  },
+  profileChanged: (p) => {
+    home.setProfile(p);
+    useProfile(p);
+  },
+});
 const pause = new PauseMenu(uiRoot, {
   resume: () => setPaused(false),
   restart: () => {
     if (current?.kind === 'practice') startPractice(current.opts);
     else if (current?.kind === 'game') startGame(current.opts);
   },
-  quit: quitToMenu,
+  quit: () => {
+    if (current?.kind === 'game' && current.opts.season) {
+      setPaused(false);
+      current.session.finishSeasonGame();
+    } else quitToMenu();
+  },
   simToEnd: () => {
     if (current?.kind === 'game') {
       setPaused(false);
@@ -190,5 +228,6 @@ if (new URLSearchParams(location.search).has('test')) {
     },
     setPlateLoc: (x: number, y: number) => input.setPlateLoc({ x, y }, cam.camera),
     quit: quitToMenu,
+    season: () => hub.state,
   };
 }

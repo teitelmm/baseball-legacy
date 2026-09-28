@@ -86,5 +86,10 @@ export function pointInPolygon(p: XZ, poly: ReadonlyArray<readonly [number, numb
 }
 
 export function inPlayableArea(p: XZ): boolean {
+  // Fast path: comfortably inside fair territory.
+  if (p.z < -5) {
+    const d = Math.hypot(p.x, p.z);
+    if (d < 320 && Math.abs(p.x) < -p.z) return true;
+  }
   return pointInPolygon(p, stadiumBoundary());
 }

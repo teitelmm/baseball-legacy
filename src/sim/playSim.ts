@@ -123,6 +123,16 @@ export type PlayEvent =
   | { type: 'out'; runnerId: string; base: number; time: number }
   | { type: 'score'; runnerId: string; time: number };
 
+interface PathSample {
+  t: number;
+  x: number;
+  y: number;
+  z: number;
+  air: boolean;
+  /** Catchable height and inside the park. */
+  ok: boolean;
+}
+
 interface FState {
   pos: FieldPosition;
   id: string;
@@ -409,16 +419,33 @@ export class PlaySim {
   // Fielding
 
   /** Earliest point on the remaining path this fielder can get to. */
+  /** The ball's path sampled once (positions, whether it's catchable and in play). */
+  private samples: PathSample[] | null = null;
+
+  private pathSamples() {
+    if (this.samples) return this.samples;
+    const path = this.setup.path;
+    const out: PathSample[] = [];
+    for (let i = 0; i * INTERCEPT_STEP <= path.duration + 1e-6; i++) {
+      const t = i * INTERCEPT_STEP;
+      const p = pathPositionAt(path, t);
+      out.push({ t, x: p.x, y: p.y, z: p.z, air: t < path.landingTime, ok: p.y <= CATCH_HEIGHT && inPlayableArea(p) });
+    }
+    this.samples = out;
+    return out;
+  }
+
   private interceptFor(f: FState): FState['intercept'] {
     const path = this.setup.path;
     const react = Math.max(0, f.reaction - this.t);
     const end = path.duration;
-    for (let ts = this.t; ts <= end + 1e-6; ts += INTERCEPT_STEP) {
-      const p = pathPositionAt(path, ts);
-      if (p.y > CATCH_HEIGHT) continue;
-      const air = ts < path.landingTime;
-      if (this.setup.foul && !air) break;
-      if (!inPlayableArea(p)) continue;
+    const samples = this.pathSamples();
+    for (let i = Math.ceil(this.t / INTERCEPT_STEP - 1e-9); i < samples.length; i++) {
+      const p = samples[i];
+      const ts = p.t;
+      if (this.setup.foul && !p.air) break;
+      if (!p.ok) continue;
+      const air = p.air;
       if (!this.canReachSpot(f, p, air)) continue;
       const d = Math.max(0, Math.hypot(p.x - f.x, p.z - f.z) - f.reach);
       // Infielders can only lunge at line drives; they don't get to run them down.

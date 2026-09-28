@@ -10,7 +10,7 @@ player — an outfielder, pitcher, DH, or two-way player — and play a season a
 | 1 | Core hitting & pitching: Batting Practice and Pitching Practice with count, outs and base runners | **Done** |
 | 2 | Full games & fielding: AI fielders, throws, baserunning, outfield / DH / pitcher position play, 3/6/9-inning games, box scores | **Done** |
 | 3 | Home screen & player creation: position (LF/CF/RF/P/DH or two-way), bats/throws, appearance, archetypes | **Done** |
-| 4 | Season mode: schedule, simulated league, standings, stats, progression, two-way rotation, save/load | Planned |
+| 4 | Season mode: 8-team league, schedule, simulated games, standings, stats, leaders, skill-point progression, two-way rotation, playoffs, save/load | **Done** |
 
 ## Running it
 
@@ -26,7 +26,40 @@ npm test           # unit tests for the sim (pitch physics, meter, swing model, 
 npm run typecheck  # tsc --noEmit
 npm run build      # production build in dist/ (relative paths, can be hosted anywhere)
 npm run smoke      # headless Playwright playtest of the built game (run `npm run build` first); screenshots in screenshots/
+npm run smoke:season  # just the season playtest (create a player, play/sim games, upgrade, sim to a champion)
 ```
+
+## Season (Stage 4)
+
+Pick **Start Season** on the home screen and choose:
+- **Length:** 20, 40 or 81 games.
+- **Innings per game:** 3, 6 or 9.
+- **Difficulty.**
+
+Your player joins the Legacy City Legends in an eight-team league. Every team plays every day.
+
+**Game days:**
+- **Hitters** play every game.
+- **Pitchers** start every fifth day, as part of a five-man rotation.
+- **Two-way players** pitch (and DH) on their start days, and play their hitting spot on the other days.
+
+On days you don't play, **Sim day** or **Sim to next start**. Games you play live work like an exhibition game. Leaving a season game from the pause menu sims the rest of it, and the result still counts.
+
+**Skill points:** you earn them for what you do: hits, extra bases, RBI, walks, outs and strikeouts on the mound, quality starts, outs you make in the field, and wins. Games you sim earn half. Spend them on the **Upgrades** tab; higher ratings cost more (3/4/6/8 points per +1). Upgrades carry over to your next season.
+
+**The hub:**
+- **Standings:** the dashed line is the playoff cut.
+- **Your stats:** season and postseason lines, plus a game log.
+- **Leaders:** AVG, HR, RBI, K, RA/9.
+- **Playoffs:** the bracket.
+
+**Playoffs:** the top four teams make it.
+- **Semifinals:** 1 vs 4 and 2 vs 3, best of 5 (2-2-1).
+- **Final:** best of 7 (2-3-2).
+
+When the season ends, MVP and Best Pitcher awards are handed out.
+
+Each save slot keeps its own season in your browser. **Continue Season** picks up where you left off.
 
 ## Your player (Stage 3)
 
@@ -49,7 +82,7 @@ Up to three players are saved in your browser (**Change Player** on the home scr
 
 ## Playing a game (Stage 2)
 
-Pick **Play Game** on the home screen and choose the difficulty, innings (3, 6 or 9) and whether your team is
+Pick **Exhibition Game** on the home screen and choose the difficulty, innings (3, 6 or 9) and whether your team is
 home or away. It's "Road to the Show" style: you play your at-bats, the balls hit to your
 area of the outfield, and every pitch while you're on the mound. Everything else is simulated, and a recap
 with the line score and play-by-play appears before each of your moments. **Sim to end of game** (recap screen
@@ -89,13 +122,14 @@ Fielders chase, catch and throw; runners run, take extra bases, tag up and get f
 src/core/     constants (field, physics, difficulty), types, seeded RNG, game clock, input, tuning
 src/sim/      pure game logic, no rendering — pitch physics, pitch meter, swing/contact model,
               batted-ball flight, play simulator (fielders, throws, runners), at-bat engine,
-              full-game engine (box score, fatigue, bullpen), teams, CPU pitcher/batter AI
+              full-game engine (box score, fatigue, bullpen), teams, CPU pitcher/batter AI,
+              player profiles, season (schedule, stats, standings, playoffs)
 src/scene/    stadium, IK-driven primitive players + animations, ball, zone overlay, cameras
 src/modes/    AtBatSession (live pitches), LivePlay (live ball in play), practice and game sessions
-src/ui/       HUD, menus, debug panel
+src/ui/       HUD, home screen and creator, season hub, menus, debug panel
 src/audio/    synthesized sound effects
 tests/        Vitest unit tests for src/sim
-scripts/      Playwright smoke test
+scripts/      Playwright smoke tests
 ```
 
 `src/sim` is deliberately independent of Three.js so later stages can simulate whole games

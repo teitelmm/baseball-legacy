@@ -110,4 +110,9 @@ export interface Team {
   defense: Record<Exclude<FieldPosition, 'P'>, string>;
   /** Starting pitcher first, then the bullpen in the order they're used. */
   pitchers: string[];
+  /** Five-man rotation and bullpen (seasons pick today's starter from the rotation). */
+  rotation?: string[];
+  bullpen?: string[];
+  /** Players who sit today (e.g. the regular DH on a two-way pitching day). */
+  bench?: string[];
 }

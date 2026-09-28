@@ -1,8 +1,10 @@
 import { sanitize, type PlayerProfile } from '../sim/profile';
+import type { Season } from '../sim/season';
 
 export const SLOT_COUNT = 3;
 const SLOT_KEY = (i: number) => `baseball-legacy:slot:${i}`;
 const ACTIVE_KEY = 'baseball-legacy:active-slot';
+const SEASON_KEY = (i: number) => `baseball-legacy:season:${i}`;
 
 export type KeyValueStore = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
@@ -46,7 +48,36 @@ export class ProfileStore {
     }
   }
 
+  loadSeason(slot: number): Season | null {
+    try {
+      const raw = this.store.getItem(SEASON_KEY(slot));
+      if (!raw) return null;
+      const s = JSON.parse(raw) as Season;
+      return s && s.version === 1 && Array.isArray(s.games) ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
+  saveSeason(slot: number, s: Season): boolean {
+    try {
+      this.store.setItem(SEASON_KEY(slot), JSON.stringify(s));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  removeSeason(slot: number): void {
+    try {
+      this.store.removeItem(SEASON_KEY(slot));
+    } catch {
+      /* ignore */
+    }
+  }
+
   remove(slot: number): void {
+    this.removeSeason(slot);
     try {
       this.store.removeItem(SLOT_KEY(slot));
       if (this.activeSlot() === slot) this.store.removeItem(ACTIVE_KEY);

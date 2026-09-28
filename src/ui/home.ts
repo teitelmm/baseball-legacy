@@ -64,18 +64,18 @@ function savePrefs(p: Prefs): void {
   }
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, html = ''): HTMLElementTagNameMap[K] {
+export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, html = ''): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   if (html) e.innerHTML = html;
   return e;
 }
 
-function segmented<T extends string>(
+export function segmented<T extends string>(
   id: string,
   label: string,
   options: Array<[T, string]>,
@@ -129,6 +129,8 @@ function heightLabel(inches: number): string {
 export interface HomeHandlers {
   practice: (opts: PracticeOptions, profile: PlayerProfile) => void;
   game: (opts: GameSetupOptions) => void;
+  /** Open the season hub for this slot's player. */
+  season: (slot: number, profile: PlayerProfile, difficulty: DifficultyName) => void;
   /** The active player changed (use their ratings). */
   profileChanged: (profile: PlayerProfile | null) => void;
 }
@@ -165,6 +167,12 @@ export class Home {
 
   get activeProfile(): PlayerProfile | null {
     return this.profile;
+  }
+
+  /** The active player was changed elsewhere (season points, upgrades). */
+  setProfile(p: PlayerProfile): void {
+    this.profile = p;
+    if (this.visible) this.render();
   }
 
   /** How much of the screen the left panel covers (for framing the 3D preview). */
@@ -288,7 +296,11 @@ export class Home {
       actions.appendChild(b);
       return b;
     };
-    btn('Play Game', 'game', true).addEventListener('click', () => this.go('setup'));
+    const hasSeason = this.slot !== null && this.store.loadSeason(this.slot) !== null;
+    btn(hasSeason ? 'Continue Season' : 'Start Season', 'season', true).addEventListener('click', () =>
+      this.handlers.season(this.slot ?? 0, p, this.prefs.difficulty),
+    );
+    btn('Exhibition Game', 'game').addEventListener('click', () => this.go('setup'));
     btn('Batting Practice', 'bp').addEventListener('click', () => this.practice('batting'));
     btn('Pitching Practice', 'pp').addEventListener('click', () => this.practice('pitching'));
     btn('Edit Player', 'edit').addEventListener('click', () => this.startCreate(this.slot ?? 0, p));

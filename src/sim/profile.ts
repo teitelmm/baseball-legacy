@@ -41,6 +41,10 @@ export interface PlayerProfile {
   bonus: Partial<Record<RatingKey, number>>;
   appearance: AppearanceSpec;
   createdAt: number;
+  /** Rating gains earned during seasons. */
+  progress?: Partial<Record<RatingKey, number>>;
+  /** Unspent skill points. */
+  skillPoints?: number;
 }
 
 export interface ArchetypeDef<K extends string> {
@@ -186,7 +190,21 @@ export function setBonus(p: PlayerProfile, k: RatingKey, value: number): PlayerP
 
 export function rating(p: PlayerProfile, k: RatingKey): number {
   const bonus = relevantKeys(p).includes(k) ? p.bonus[k] ?? 0 : 0;
-  return Math.max(20, Math.min(99, baseRating(p, k) + bonus));
+  const earned = p.progress?.[k] ?? 0;
+  return Math.max(20, Math.min(99, baseRating(p, k) + bonus + earned));
+}
+
+/** Skill points to raise a rating by one. Higher ratings cost more. */
+export function upgradeCost(current: number): number {
+  return current < 65 ? 3 : current < 75 ? 4 : current < 85 ? 6 : 8;
+}
+
+/** Spend skill points on one rating. Returns the new profile, or null if you can't afford it. */
+export function upgrade(p: PlayerProfile, k: RatingKey): PlayerProfile | null {
+  const current = rating(p, k);
+  const cost = upgradeCost(current);
+  if (current >= 99 || (p.skillPoints ?? 0) < cost || !relevantKeys(p).includes(k)) return null;
+  return { ...p, skillPoints: (p.skillPoints ?? 0) - cost, progress: { ...p.progress, [k]: (p.progress?.[k] ?? 0) + 1 } };
 }
 
 export interface FinalRatings {
