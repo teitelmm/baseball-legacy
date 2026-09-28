@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CATCHER_Z, INCH, SWING_TIME_MS, type Difficulty } from '../core/constants';
+import { CATCHER_Z, INCH, SWING_TIME_MS, ZONE_Z, type Difficulty } from '../core/constants';
 import type { GameClock } from '../core/clock';
 import type { Input, ClickEvent } from '../core/input';
 import type { Rng } from '../core/rng';
@@ -18,7 +18,7 @@ import { evaluateSwing, pciSize, timingWindows, type SwingParams, type SwingResu
 import { isStrike } from '../sim/zone';
 import { BATTER_STANCE, batterLoadKeys, batterSwingKeys, catcherPose, pitcherKeys, SWING_DURATION, WINDUP_DURATION } from '../scene/animations';
 import { BATTER_OFFSET, CATCHER_ROOT_Z, FieldActors } from '../scene/actors';
-import { BallView } from '../scene/ballView';
+import { BallView, GHOST_COUNT } from '../scene/ballView';
 import type { CameraRig } from '../scene/cameraRig';
 import { samplePose, type Appearance, type Keyframes } from '../scene/humanoid';
 import { ZoneOverlay } from '../scene/zoneOverlay';
@@ -104,6 +104,13 @@ function swingParams(d: Difficulty): SwingParams {
 function pitchGuideOn(d: Difficulty): boolean {
   return tuning.pitchGuide === 'auto' ? d.pitchGuide : tuning.pitchGuide === 'on';
 }
+
+function ballTrackerOpacity(d: Difficulty): number {
+  return tuning.ballTracker === 'auto' ? d.ballTracker : tuning.ballTracker === 'on' ? 1 : 0;
+}
+
+/** Spacing (s) between the comet-tail afterimages behind a pitch. */
+const GHOST_SPACING = 0.018;
 
 /** Live pitch-by-pitch play in 3D, for practice or your moments in a game. */
 export class AtBatSession {
@@ -553,7 +560,7 @@ export class AtBatSession {
   update(now: number, dt: number): void {
     this.zone.setZoneVisible(tuning.showZone);
     const guide = this.isUserBatting() && pitchGuideOn(this.difficulty);
-    this.ball.showTrail = tuning.showTrail || guide;
+    this.ball.showTrail = tuning.showTrail;
     this.ball.boost = this.isUserBatting() && this.phase !== 'inPlay' ? 1.8 : 1;
     this.ball.setGlow(this.isUserBatting() && (this.phase === 'windup' || this.phase === 'flight'));
     this.zone.update(dt);
@@ -594,6 +601,11 @@ export class AtBatSession {
     const battingCam = this.isUserBatting() && (this.cam.mode === 'batting' || !this.cam.settled);
     this.actors.catcher.root.visible = !battingCam;
     this.actors.umpire.root.visible = !battingCam;
+
+    // Pitch-reading aids are redrawn every frame while a pitch is on its way.
+    this.ball.clearGhosts();
+    this.zone.setTracker(null);
+    this.zone.setMarkersDim(this.isUserBatting() && (this.phase === 'windup' || this.phase === 'flight'));
 
     switch (this.phase) {
       case 'prePitch':
@@ -649,6 +661,22 @@ export class AtBatSession {
     this.ball.clearTrail();
   }
 
+  /** Help your eye read the pitch: a comet tail along its real path, and its height/side on the zone. */
+  private showPitchReadAids(traj: PitchTrajectory, flightT: number, pos: Vec3): void {
+    const color = PITCH_TYPES[traj.spec.type].color;
+    if (tuning.pitchTail && this.difficulty.pitchTail > 0) {
+      const pts: Vec3[] = [];
+      for (let i = 1; i <= GHOST_COUNT && flightT - i * GHOST_SPACING >= 0; i++) pts.push(positionAt(traj, flightT - i * GHOST_SPACING));
+      this.ball.setGhosts(pts, color, this.difficulty.pitchTail);
+    }
+    const opacity = ballTrackerOpacity(this.difficulty);
+    if (opacity > 0 && pos.z < ZONE_Z) {
+      // Fades in after the release so it doesn't clutter the pitcher's hand.
+      const k = THREE.MathUtils.clamp((flightT / traj.flightTime - 0.1) / 0.15, 0, 1);
+      this.zone.setTracker({ x: pos.x, y: pos.y }, opacity * k, color);
+    }
+  }
+
   private updatePitch(now: number): void {
     const p = this.pitch!;
     // Pitcher delivery.
@@ -682,8 +710,10 @@ export class AtBatSession {
     this.actors.catcher.apply(catcherPose(this.mittLocal(mix, mix.y)));
 
     const t = Math.min(now, p.catchAt);
-    const pos = positionAt(p.traj, (t - p.releaseAt) / 1000);
+    const flightT = (t - p.releaseAt) / 1000;
+    const pos = positionAt(p.traj, flightT);
     this.ball.set(pos, (now - p.releaseAt) * 0.1);
+    if (this.isUserBatting()) this.showPitchReadAids(p.traj, flightT, pos);
 
     const s = p.swing;
     if (s && s.result.kind !== 'whiff') {

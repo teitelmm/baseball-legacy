@@ -99,6 +99,15 @@ Fielders chase, catch and throw; runners run, take extra bases, tag up and get f
 - **Right-click** or **Shift+click** — power swing (smaller PCI and tighter timing, more exit velocity)
 - Early swings pull the ball, late swings go the other way. The PCI above the ball tops it into
   the ground; below the ball lifts it.
+- **Reading the pitch:**
+  - A comet tail follows each pitch along its real path, colored by pitch type (four-seam red, sinker
+    orange, slider yellow, curveball blue, changeup green).
+  - The **ball tracker** dot on the strike zone shows the ball's current height and side as it comes in,
+    so you can line the PCI up with it.
+  - How much of this you get depends on difficulty: the tracker is full on Rookie, a bit fainter on Pro,
+    faint on All-Star and off on Legend, and the tail gets shorter on the harder levels.
+  - Rookie also marks where the pitch will cross.
+  - Earlier pitches' markers fade while the ball is in the air so they aren't mistaken for it.
 
 **Pitching**
 - **1–5** or click a button — choose a pitch
@@ -113,7 +122,7 @@ Fielders chase, catch and throw; runners run, take extra bases, tag up and get f
 
 **General**
 - **Esc** — pause / quit to menu
-- **`** (backtick) — debug & tuning panel (game speed, timing windows, PCI size, ratings, ball trail)
+- **`** (backtick) — debug & tuning panel (game speed, timing windows, PCI size, ratings, ball trail, pitch tail, ball tracker)
 - **Space** or click — skip the replay after a pitch
 
 ## Code layout

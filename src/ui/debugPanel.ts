@@ -7,6 +7,7 @@ export function createDebugPanel(onChange: (key: string) => void): GUI {
   const view = gui.addFolder('View');
   view.add(tuning, 'showZone').name('Strike zone');
   view.add(tuning, 'showTrail').name('Ball trail');
+  view.add(tuning, 'pitchTail').name('Pitch comet tail');
   view.add(tuning, 'showTimingMs').name('Timing in ms');
   view
     .add(tuning, 'timeScale', 0.1, 1, 0.05)
@@ -18,6 +19,7 @@ export function createDebugPanel(onChange: (key: string) => void): GUI {
   diff.add(tuning, 'pciScaleOverride', 0, 2, 0.05).name('PCI size ×').onChange(() => onChange('pci'));
   diff.add(tuning, 'contactAssistOverride', -1, 1, 0.05).name('Contact assist (-1 = preset)');
   diff.add(tuning, 'pitchGuide', ['auto', 'on', 'off']).name('Pitch guide');
+  diff.add(tuning, 'ballTracker', ['auto', 'on', 'off']).name('Ball tracker');
   diff.add(tuning, 'timingOffsetMs', -80, 80, 1).name('Timing offset (ms)');
   diff.add(tuning, 'cpuRatingOverride', 0, 99, 1).name('CPU rating (next session)');
 

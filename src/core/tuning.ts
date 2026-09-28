@@ -14,6 +14,10 @@ export const tuning = {
   contactAssistOverride: -1,
   /** 'auto' follows the difficulty preset. */
   pitchGuide: 'auto' as 'auto' | 'on' | 'off',
+  /** Ball tracker on the zone; 'auto' follows the difficulty preset. */
+  ballTracker: 'auto' as 'auto' | 'on' | 'off',
+  /** Comet tail behind pitches. */
+  pitchTail: true,
   /** Shifts your swing timing (ms) to compensate for input or display lag. Positive = your swings count earlier. */
   timingOffsetMs: 0,
   userBatter: { contact: 70, power: 70, eye: 70 } as BattingRatings,

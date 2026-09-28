@@ -3,6 +3,8 @@ import { BALL_RADIUS } from '../core/constants';
 import type { Vec3 } from '../core/types';
 
 const TRAIL_POINTS = 40;
+/** Afterimages drawn behind a pitch (a comet tail sampled from the real path). */
+export const GHOST_COUNT = 7;
 
 /** The ball mesh (drawn a bit larger than life so it reads at a distance) plus an optional trail. */
 export class BallView {
@@ -17,6 +19,7 @@ export class BallView {
   /** Extra size multiplier (the batting view draws the pitch bigger so it's easier to track). */
   boost = 1;
   private readonly glow: THREE.Sprite;
+  private readonly ghosts: THREE.Sprite[] = [];
 
   constructor(scene: THREE.Scene) {
     const tex = ballTexture();
@@ -33,6 +36,15 @@ export class BallView {
     this.glow.scale.setScalar(BALL_RADIUS * 6);
     this.glow.visible = false;
     this.mesh.add(this.glow);
+
+    const ghostTex = discTexture();
+    for (let i = 0; i < GHOST_COUNT; i++) {
+      const g = new THREE.Sprite(new THREE.SpriteMaterial({ map: ghostTex, transparent: true, depthWrite: false }));
+      g.visible = false;
+      g.renderOrder = 5;
+      scene.add(g);
+      this.ghosts.push(g);
+    }
 
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(0.35, 16),
@@ -73,6 +85,30 @@ export class BallView {
     this.glow.visible = on;
   }
 
+  /**
+   * The pitch's comet tail: earlier points on its path (newest first), fading and
+   * shrinking, tinted with the pitch type's color. `length` (0-1) trims the tail.
+   */
+  setGhosts(points: Vec3[], color: string, length = 1): void {
+    const n = Math.round(points.length * length);
+    const base = this.mesh.scale.x * BALL_RADIUS * 2 * 1.35;
+    this.ghosts.forEach((g, i) => {
+      const p = points[i];
+      g.visible = !!p && i < n;
+      if (!g.visible) return;
+      const k = 1 - (i + 1) / (GHOST_COUNT + 1);
+      g.position.set(p.x, p.y, p.z);
+      g.scale.setScalar(base * (0.55 + 0.4 * k));
+      const m = g.material as THREE.SpriteMaterial;
+      m.color.set(color);
+      m.opacity = 0.12 + 0.5 * k;
+    });
+  }
+
+  clearGhosts(): void {
+    for (const g of this.ghosts) g.visible = false;
+  }
+
   clearTrail(): void {
     this.trailCount = 0;
     this.trail.geometry.setDrawRange(0, 0);
@@ -99,6 +135,7 @@ export class BallView {
     this.shadow.visible = false;
     this.trail.visible = false;
     this.clearTrail();
+    this.clearGhosts();
   }
 }
 
@@ -132,6 +169,22 @@ function glowTexture(): THREE.CanvasTexture {
   g.addColorStop(0, 'rgba(255,255,255,0.9)');
   g.addColorStop(0.35, 'rgba(255,250,220,0.35)');
   g.addColorStop(1, 'rgba(255,250,220,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function discTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 64, 64);
   const t = new THREE.CanvasTexture(c);

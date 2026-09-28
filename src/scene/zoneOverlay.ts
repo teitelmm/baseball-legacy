@@ -34,6 +34,9 @@ export class ZoneOverlay {
   private readonly ballMark: THREE.Group;
   /** Rookie aid: where the pitch will cross, shown once it's released. */
   private readonly guide: THREE.Mesh;
+  /** Where the ball is right now (its height and side), drawn on the zone plane as it comes in. */
+  private readonly tracker: THREE.Group;
+  private readonly trackerMats: THREE.MeshBasicMaterial[] = [];
   readonly reticle = new THREE.Group();
   private readonly markers = new THREE.Group();
   private readonly markerGeo = new THREE.CircleGeometry(1.45 * INCH * 1.1, 20);
@@ -82,6 +85,18 @@ export class ZoneOverlay {
     this.guide.renderOrder = 12;
     this.guide.visible = false;
     this.group.add(this.guide);
+
+    this.tracker = new THREE.Group();
+    const tDisc = overlayMat('#ffffff', 0);
+    const tRing = overlayMat('#10161f', 0);
+    this.trackerMats.push(tDisc, tRing);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(1.45 * INCH, 24), tDisc);
+    const outline = new THREE.Mesh(new THREE.RingGeometry(1.45 * INCH, 1.95 * INCH, 24), tRing);
+    disc.renderOrder = 12;
+    outline.renderOrder = 12;
+    this.tracker.add(disc, outline);
+    this.tracker.visible = false;
+    this.group.add(this.tracker);
 
     // Pitching aim reticle.
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.9 * INCH, 2.5 * INCH, 32), overlayMat('#ff4f4f', 0.9));
@@ -195,6 +210,16 @@ export class ZoneOverlay {
     (this.guide.material as THREE.MeshBasicMaterial).opacity = 0.25 + 0.55 * k;
   }
 
+  /** Show the ball's current height and side on the zone (null hides it). */
+  setTracker(loc: PlateLoc | null, opacity = 1, color = '#ffffff'): void {
+    this.tracker.visible = !!loc && opacity > 0;
+    if (!loc || opacity <= 0) return;
+    this.tracker.position.set(loc.x, loc.y, 0.015);
+    this.trackerMats[0].color.set(color);
+    this.trackerMats[0].opacity = 0.85 * opacity;
+    this.trackerMats[1].opacity = 0.6 * opacity;
+  }
+
   setReticle(loc: PlateLoc): void {
     this.reticle.position.set(loc.x, loc.y, 0.02);
   }
@@ -210,6 +235,11 @@ export class ZoneOverlay {
     m.renderOrder = 13;
     m.userData.label = label;
     this.markers.add(m);
+  }
+
+  /** Fade earlier pitches' markers while a pitch is in the air so they aren't mistaken for the ball. */
+  setMarkersDim(dim: boolean): void {
+    for (const m of this.markers.children) ((m as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = dim ? 0.25 : 0.95;
   }
 
   clearMarkers(): void {

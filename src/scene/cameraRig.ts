@@ -25,9 +25,11 @@ export class CameraRig {
 
   battingShot(bats: Handedness): Shot {
     // Behind the plate (catcher and umpire are hidden in this view), shaded slightly
-    // away from the batter so he doesn't block the zone.
+    // away from the batter so he doesn't block the zone. Set well back with a longer
+    // lens: the pitch's path on screen stays even instead of swooping in at the end,
+    // so it's easier to read where it's going.
     const away = bats === 'R' ? 1 : -1;
-    return { pos: new THREE.Vector3(away * 0.8, 4.4, 10.5), look: new THREE.Vector3(away * 0.1, 3.1, -30), fov: 38 };
+    return { pos: new THREE.Vector3(away * 1.0, 4.9, 17), look: new THREE.Vector3(away * 0.15, 2.7, -40), fov: 27 };
   }
 
   pitchingShot(throws: Handedness): Shot {

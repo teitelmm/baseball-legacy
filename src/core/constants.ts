@@ -67,6 +67,10 @@ export interface Difficulty {
   contactAssist: number;
   /** Show where the pitch will cross the plate once it's released. */
   pitchGuide: boolean;
+  /** Opacity (0-1) of the ball tracker: the ball's current height and side shown on the zone. */
+  ballTracker: number;
+  /** How much of the comet tail behind a pitch is drawn (0-1). */
+  pitchTail: number;
   /** Rating the CPU opponent plays at (0-100). */
   cpuRating: number;
   /** Velocity/movement rating of the CPU pitcher you bat against. */
@@ -87,6 +91,8 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
     pciScale: 1.5,
     contactAssist: 0.4,
     pitchGuide: true,
+    ballTracker: 1,
+    pitchTail: 1,
     cpuRating: 40,
     cpuPitcherStuff: 20,
     cpuZoneBias: 0.2,
@@ -100,6 +106,8 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
     pciScale: 1.2,
     contactAssist: 0.15,
     pitchGuide: false,
+    ballTracker: 0.85,
+    pitchTail: 1,
     cpuRating: 58,
     cpuPitcherStuff: 45,
     cpuZoneBias: 0.08,
@@ -113,6 +121,8 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
     pciScale: 1.0,
     contactAssist: 0,
     pitchGuide: false,
+    ballTracker: 0.5,
+    pitchTail: 0.75,
     cpuRating: 75,
     cpuPitcherStuff: 75,
     cpuZoneBias: 0,
@@ -126,6 +136,8 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
     pciScale: 0.85,
     contactAssist: 0,
     pitchGuide: false,
+    ballTracker: 0,
+    pitchTail: 0.5,
     cpuRating: 90,
     cpuPitcherStuff: 92,
     cpuZoneBias: 0,
