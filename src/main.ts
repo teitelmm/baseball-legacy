@@ -150,6 +150,9 @@ if (new URLSearchParams(location.search).has('test')) {
       } else if (current?.kind === 'game') current.session.setAuto(v, lateMs);
     },
     snapshot: () => current?.session.snapshot() ?? null,
+    forceHit: (ev: number, la: number, spray: number) => {
+      if (current?.kind === 'practice') current.session.forceHit = { ev, la, spray };
+    },
     simToEnd: () => current?.kind === 'game' && current.session.simToEnd(),
     setTimeScale: (s: number) => {
       tuning.timeScale = s;

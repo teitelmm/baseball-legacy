@@ -139,6 +139,8 @@ export class AtBatSession {
   auto = false;
   /** Test hook: how late (ms) the automatic swing is. */
   autoTimingMs = 0;
+  /** Test hook: force the next ball in play (exit velo, launch angle, spray). */
+  forceHit: { ev: number; la: number; spray: number } | null = null;
 
   constructor(
     private readonly host: AtBatHost,
@@ -415,6 +417,13 @@ export class AtBatSession {
       la = r.launchAngleDeg;
       spray = r.sprayDeg;
       quality = r.quality;
+      if (this.forceHit) {
+        ({ ev, la, spray } = this.forceHit);
+        r.exitVeloMph = ev;
+        r.launchAngleDeg = la;
+        r.sprayDeg = spray;
+        this.forceHit = null;
+      }
     }
     const start: Vec3 = { x: p.traj.spec.plateLoc.x, y: p.traj.spec.plateLoc.y, z: -0.3 };
     const path = simulateBattedBall({ exitVeloMph: ev, launchAngleDeg: la, sprayDeg: spray, start });
@@ -469,8 +478,10 @@ export class AtBatSession {
       const r = s.result;
       const bb = this.inPlay.play.sim.setup.path;
       const play = ev.play;
-      const title = capitalize(description);
+      const homer = play.batterResult === 'homeRun';
+      const title = homer ? 'HOME RUN!' : capitalize(description);
       const detail = [
+        homer ? capitalize(description) : '',
         `${timing(r.timingErrorMs, r.timingLabel)} · ${r.contactLabel}`,
         `${r.exitVeloMph.toFixed(1)} mph · ${r.launchAngleDeg.toFixed(0)}° · ${Math.round(bb.distance)} ft`,
         extra,

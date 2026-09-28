@@ -133,6 +133,8 @@ describe('play simulator', () => {
         for (const f of sim.fielders) expect(inPlayableArea(f)).toBe(true);
       }
       expect((sim.outcome as PlayResult).batterResult).toBe('homeRun');
+      // The play wraps up soon after the ball lands instead of making you watch the whole trot.
+      expect(sim.t).toBeLessThan(sim.setup.path.landingTime + 3);
     }
   });
 

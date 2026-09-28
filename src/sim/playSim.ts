@@ -313,15 +313,17 @@ export class PlaySim {
         .filter((f) => OUTFIELD.includes(f.pos))
         .sort((a, b) => dist(a, spot) - dist(b, spot))
         .slice(0, 2);
-      for (const f of chasers) {
+      chasers.forEach((f, i) => {
+        // Side by side at the wall, not on top of each other.
+        const off = i === 0 ? 0 : 14;
         f.role = 'chase';
-        f.target = spot;
-      }
+        f.target = { x: spot.x - dz * off, z: spot.z + dx * off };
+      });
       for (const r of this.runners) {
         r.next = r.base + 1;
         r.state = 'run';
         r.forced = true;
-        r.speed *= 0.72; // trot
+        r.speed *= 0.9; // trot
       }
       return;
     }
@@ -842,7 +844,8 @@ export class PlaySim {
       return;
     }
     if (this.isHomeRun) {
-      if (this.runners.every((r) => r.state === 'scored')) this.finish();
+      // Don't make everyone watch the whole trot: the play is over once the ball is gone.
+      if (this.runners.every((r) => r.state === 'scored') || this.t > path.landingTime + 2.5) this.finish();
       return;
     }
     const secured = this.ball.kind === 'held';
@@ -880,6 +883,15 @@ export class PlaySim {
         }
         r.state = 'safe';
         r.prog = 0;
+      }
+    }
+
+    if (this.isHomeRun) {
+      for (const r of this.runners) {
+        if (r.state !== 'scored') {
+          r.state = 'scored';
+          r.scoredAt = this.t;
+        }
       }
     }
 

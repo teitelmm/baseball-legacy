@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fenceDistance } from '../src/core/constants';
+import { fenceDistance, WALL_HEIGHT } from '../src/core/constants';
 import { simulateBattedBall } from '../src/sim/battedBall';
 import { isFoul } from '../src/sim/outcome';
 
@@ -30,6 +30,14 @@ describe('batted ball flight', () => {
     const p = hit(110, 28, -15);
     expect(p.homeRun).toBe(true);
     expect(isFoul(p)).toBe(false);
+  });
+
+  it('a home run comes down in the seats, not behind them', () => {
+    const p = hit(110, 28, -15);
+    expect(p.homeRun).toBe(true);
+    expect(p.landing.y).toBeGreaterThanOrEqual(WALL_HEIGHT);
+    expect(p.distance).toBeGreaterThan(fenceDistance(-15));
+    expect(p.duration).toBeCloseTo(p.landingTime, 5);
   });
 
   it('ground balls land short and pop ups hang', () => {

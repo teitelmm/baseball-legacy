@@ -134,6 +134,21 @@ export function simulateBattedBall(init: BattedBallInit, maxTime = 10): BattedBa
       }
     }
 
+    // A home run comes down in the bleachers, which rise behind the wall.
+    if (homeRun) {
+      const beyond = Math.max(0, dist - fenceDistance(Math.max(-FOUL_ANGLE, Math.min(FOUL_ANGLE, spray))));
+      const seatY = WALL_HEIGHT + beyond * 0.5;
+      if (pos.y <= seatY && vel.y < 0) {
+        pos.y = seatY;
+        if (landingTime < 0) {
+          landingTime = t;
+          landing = { ...pos };
+        }
+        points.push({ ...pos });
+        break;
+      }
+    }
+
     if (pos.y <= BALL_RADIUS && vel.y < 0) {
       pos.y = BALL_RADIUS;
       if (landingTime < 0) {
