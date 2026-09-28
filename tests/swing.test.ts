@@ -124,4 +124,24 @@ describe('swing contact model', () => {
       }
     }
   });
+
+  it('an average player puts most swings in play on Rookie and Pro', () => {
+    // Aim off by ~6 in and timing off by ~80 ms (one standard deviation), swinging at a strike.
+    const rate = (name: 'rookie' | 'pro') => {
+      const d = DIFFICULTIES[name];
+      const rng = new Rng(3);
+      let fair = 0;
+      for (let i = 0; i < 4000; i++) {
+        const r = evaluateSwing(
+          { type: 'normal', pci: { x: rng.gaussian(0, 0.5), y: 2.5 + rng.gaussian(0, 0.5) }, timingErrorMs: rng.gaussian(0, 80) },
+          ctx({ contactRating: 60, powerRating: 60, params: { timingScale: d.timingScale, pciScale: d.pciScale, contactAssist: d.contactAssist } }),
+          rng,
+        );
+        if (r.kind === 'contact') fair++;
+      }
+      return fair / 4000;
+    };
+    expect(rate('rookie')).toBeGreaterThan(0.9);
+    expect(rate('pro')).toBeGreaterThan(0.75);
+  });
 });

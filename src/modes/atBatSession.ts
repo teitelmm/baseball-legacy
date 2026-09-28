@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CATCHER_Z, INCH, SWING_TIME_MS, ZONE_Z, type Difficulty } from '../core/constants';
+import { CATCHER_Z, INCH, SWING_TIME_MS, USER_SWING_LAG_MS, ZONE_Z, type Difficulty } from '../core/constants';
 import type { GameClock } from '../core/clock';
 import type { Input, ClickEvent } from '../core/input';
 import type { Rng } from '../core/rng';
@@ -318,7 +318,7 @@ export class AtBatSession {
     const catchAt = releaseAt + timeAtZ(traj, CATCHER_Z) * 1000;
     // A human batter can still swing a little after the ball passes (late contact).
     const lateGrace = this.isUserBatting()
-      ? Math.max(0, timingWindows('normal', swingParams(this.difficulty)).whiff - SWING_TIME_MS + tuning.timingOffsetMs)
+      ? Math.max(0, timingWindows('normal', swingParams(this.difficulty)).whiff + USER_SWING_LAG_MS + tuning.timingOffsetMs)
       : 0;
     const callAt = Math.max(catchAt, arrivalAt + lateGrace);
     this.pitch = { traj, target, windupAt: now, releaseAt, arrivalAt, catchAt, callAt, caught: false, swing: null, cpuDecided: false };
@@ -361,7 +361,8 @@ export class AtBatSession {
     const p = this.pitch;
     if (!p || p.swing) return;
     if (t > p.callAt) return;
-    const timingErrorMs = t + SWING_TIME_MS - p.arrivalAt - tuning.timingOffsetMs;
+    // Perfect = clicking just as you see the ball reach the plate (see USER_SWING_LAG_MS).
+    const timingErrorMs = t - p.arrivalAt - USER_SWING_LAG_MS - tuning.timingOffsetMs;
     const result = evaluateSwing(
       { type, pci: { ...this.pciLoc }, timingErrorMs },
       {
@@ -374,7 +375,8 @@ export class AtBatSession {
       },
       this.rng,
     );
-    this.recordSwing(t, type, { ...this.pciLoc }, result);
+    // Start the animation so the bat reaches the zone when the swing is judged to.
+    this.recordSwing(p.arrivalAt + timingErrorMs - SWING_TIME_MS, type, { ...this.pciLoc }, result);
     this.zone.flashPci();
   }
 
@@ -688,7 +690,7 @@ export class AtBatSession {
     if (this.auto && this.isUserBatting() && !p.swing && now >= p.arrivalAt - SWING_TIME_MS - 5) {
       // Test hook: perfect swing at the ball.
       this.pciLoc = { ...p.traj.spec.plateLoc };
-      this.userSwing(p.arrivalAt - SWING_TIME_MS + this.autoTimingMs + this.rng.gaussian(0, 10), 'normal');
+      this.userSwing(p.arrivalAt + USER_SWING_LAG_MS + tuning.timingOffsetMs + this.autoTimingMs + this.rng.gaussian(0, 10), 'normal');
     }
 
     if (now < p.releaseAt) {

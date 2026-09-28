@@ -51,8 +51,16 @@ export function fenceDistance(sprayDeg: number): number {
   return FENCE_POINTS[FENCE_POINTS.length - 1][1];
 }
 
-/** How long after the click the bat reaches the hitting zone. */
+/** How long the swing animation takes to bring the bat to the hitting zone. */
 export const SWING_TIME_MS = 90;
+
+/**
+ * When a human batter's click is "perfect": this long after the ball reaches the plate.
+ * People click when they *see* the ball arrive, and the screen shows it a frame or two
+ * late, so the ideal click sits just after the real arrival (the swing animation is
+ * started early to match, so the bat still meets the ball).
+ */
+export const USER_SWING_LAG_MS = 25;
 
 export type DifficultyName = 'rookie' | 'pro' | 'allstar' | 'legend';
 
@@ -87,9 +95,9 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
   rookie: {
     name: 'rookie',
     label: 'Rookie',
-    timingScale: 2.0,
-    pciScale: 1.5,
-    contactAssist: 0.4,
+    timingScale: 2.4,
+    pciScale: 1.7,
+    contactAssist: 0.5,
     pitchGuide: true,
     ballTracker: 1,
     pitchTail: 1,
@@ -102,9 +110,9 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
   pro: {
     name: 'pro',
     label: 'Pro',
-    timingScale: 1.4,
-    pciScale: 1.2,
-    contactAssist: 0.15,
+    timingScale: 1.7,
+    pciScale: 1.45,
+    contactAssist: 0.35,
     pitchGuide: false,
     ballTracker: 0.85,
     pitchTail: 1,
@@ -117,9 +125,9 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
   allstar: {
     name: 'allstar',
     label: 'All-Star',
-    timingScale: 1.0,
-    pciScale: 1.0,
-    contactAssist: 0,
+    timingScale: 1.2,
+    pciScale: 1.15,
+    contactAssist: 0.15,
     pitchGuide: false,
     ballTracker: 0.5,
     pitchTail: 0.75,
@@ -132,9 +140,9 @@ export const DIFFICULTIES: Record<DifficultyName, Difficulty> = {
   legend: {
     name: 'legend',
     label: 'Legend',
-    timingScale: 0.8,
-    pciScale: 0.85,
-    contactAssist: 0,
+    timingScale: 0.95,
+    pciScale: 0.95,
+    contactAssist: 0.05,
     pitchGuide: false,
     ballTracker: 0,
     pitchTail: 0.5,

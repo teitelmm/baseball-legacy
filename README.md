@@ -95,7 +95,8 @@ Fielders chase, catch and throw; runners run, take extra bases, tag up and get f
 
 **Hitting**
 - **Mouse** — move the PCI (plate coverage indicator)
-- **Left-click** — normal swing
+- **Left-click** — normal swing. Click just as the ball reaches the plate; that's perfect timing.
+  (Rookie's shrinking ring closes at exactly that moment.)
 - **Right-click** or **Shift+click** — power swing (smaller PCI and tighter timing, more exit velocity)
 - Early swings pull the ball, late swings go the other way. The PCI above the ball tops it into
   the ground; below the ball lifts it.
