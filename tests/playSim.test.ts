@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FIELD_POSITIONS } from '../src/core/types';
 import { simulateBattedBall } from '../src/sim/battedBall';
+import { inPlayableArea } from '../src/sim/field';
 import { isFoul } from '../src/sim/outcome';
 import { PlaySim, simulatePlay, type PlayOutcome, type PlayResult, type PlaySetup } from '../src/sim/playSim';
 
@@ -122,5 +123,27 @@ describe('play simulator', () => {
 
   it('is deterministic', () => {
     expect(play(97, 8, 20, [true, true, false], 1)).toEqual(play(97, 8, 20, [true, true, false], 1));
+  });
+
+  it('fielders never run through the outfield wall on a home run', () => {
+    for (const spray of [-40, -20, 0, 20, 40]) {
+      const sim = new PlaySim(setup(112, 30, spray));
+      while (!sim.done) {
+        sim.step();
+        for (const f of sim.fielders) expect(inPlayableArea(f)).toBe(true);
+      }
+      expect((sim.outcome as PlayResult).batterResult).toBe('homeRun');
+    }
+  });
+
+  it('a player-controlled outfielder stops at the wall', () => {
+    const s = setup(112, 30, 0);
+    s.userPosition = 'CF';
+    s.control = { move: () => ({ x: 0, z: -1 }), takeThrow: () => null };
+    const sim = new PlaySim(s);
+    while (!sim.done) sim.step();
+    const cf = sim.fielders.find((f) => f.pos === 'CF')!;
+    expect(inPlayableArea(cf)).toBe(true);
+    expect(Math.hypot(cf.x, cf.z)).toBeGreaterThan(385);
   });
 });

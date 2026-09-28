@@ -2,6 +2,7 @@ import type { FieldingRatings, FieldPosition } from '../core/types';
 import { FIELD_POSITIONS, POSITION_NUMBER } from '../core/types';
 import type { Vec3 } from '../core/types';
 import { pathPositionAt, sprayOf, type BattedBallPath } from './battedBall';
+import { fenceDistance } from '../core/constants';
 import { BASES, dist, FIELD_SPOTS, inPlayableArea, type XZ } from './field';
 import { battedBallType, type BattedBallType } from './outcome';
 
@@ -304,6 +305,18 @@ export class PlaySim {
   private initialAssignments(): void {
     const s = this.setup;
     if (this.isHomeRun) {
+      const exit = sprayOf(s.path.landing);
+      const [dx, dz] = [Math.sin((exit * Math.PI) / 180), -Math.cos((exit * Math.PI) / 180)];
+      const wall = fenceDistance(exit) - 4;
+      const spot = { x: dx * wall, z: dz * wall };
+      const chasers = this.fielders
+        .filter((f) => OUTFIELD.includes(f.pos))
+        .sort((a, b) => dist(a, spot) - dist(b, spot))
+        .slice(0, 2);
+      for (const f of chasers) {
+        f.role = 'chase';
+        f.target = spot;
+      }
       for (const r of this.runners) {
         r.next = r.base + 1;
         r.state = 'run';
@@ -413,7 +426,7 @@ export class PlaySim {
     if (this.setup.foul) return null;
     // The ball has stopped: go get it.
     const last = path.points[path.points.length - 1];
-    if (!this.canReachSpot(f, last, false)) return null;
+    if (!inPlayableArea(last) || !this.canReachSpot(f, last, false)) return null;
     const d = Math.max(0, Math.hypot(last.x - f.x, last.z - f.z) - f.reach);
     return { t: Math.max(end, this.t + react + d / f.speed), p: { x: last.x, z: last.z }, air: false };
   }
@@ -479,10 +492,21 @@ export class PlaySim {
           vz = (dz / d) * sp;
         }
       }
-      f.vx = vx;
-      f.vz = vz;
-      f.x += vx * dt;
-      f.z += vz * dt;
+      // Walls are solid: slide along them instead of running through.
+      let nx = f.x + vx * dt;
+      let nz = f.z + vz * dt;
+      if (!insideWalls(nx, nz)) {
+        if (insideWalls(nx, f.z)) nz = f.z;
+        else if (insideWalls(f.x, nz)) nx = f.x;
+        else {
+          nx = f.x;
+          nz = f.z;
+        }
+      }
+      f.vx = (nx - f.x) / dt;
+      f.vz = (nz - f.z) / dt;
+      f.x = nx;
+      f.z = nz;
     });
   }
 
@@ -789,7 +813,7 @@ export class PlaySim {
     if (this.done) return;
     this.t += dt;
 
-    if (this.t - this.lastRethink >= RETHINK_EVERY && this.ball.kind === 'path') {
+    if (this.t - this.lastRethink >= RETHINK_EVERY && this.ball.kind === 'path' && !this.isHomeRun) {
       this.rethink();
       this.lastRethink = this.t;
     }
@@ -942,4 +966,13 @@ export class PlaySim {
 /** Convenience: simulate a whole play headlessly. */
 export function simulatePlay(setup: PlaySetup): PlayOutcome {
   return new PlaySim(setup).run();
+}
+
+/** Is a fielder standing here clear of the walls (with a little room to spare)? */
+function insideWalls(x: number, z: number): boolean {
+  // Check a point a few feet further out from the middle of the field.
+  const cx = x;
+  const cz = z + 150;
+  const len = Math.hypot(cx, cz) || 1;
+  return inPlayableArea({ x: x + (cx / len) * 3, z: z + (cz / len) * 3 });
 }
