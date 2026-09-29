@@ -163,9 +163,19 @@ function solveTwoBone(
   outEnd.copy(a).addScaledVector(dir, d);
 }
 
-function segment(radiusTop: number, radiusBottom: number, mat: THREE.Material): THREE.Mesh {
-  const g = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, 14, 1, true);
-  const m = new THREE.Mesh(g, mat);
+/**
+ * A limb segment one unit long (stretched to fit between two joints). It tapers from
+ * `rProx` at the near joint to `rDist` at the far one, with a muscle bulge (thigh,
+ * calf, biceps, forearm) at `bulgeAt` of the way down.
+ */
+function segment(rProx: number, rDist: number, mat: THREE.Material, bulge = 1, bulgeAt = 0.3): THREE.Mesh {
+  const pts: THREE.Vector2[] = [];
+  for (const f of [0, 0.12, 0.25, 0.4, 0.55, 0.7, 0.85, 1]) {
+    const base = rProx + (rDist - rProx) * f;
+    const k = 1 + (bulge - 1) * Math.exp(-(((f - bulgeAt) / 0.22) ** 2));
+    pts.push(new THREE.Vector2(base * k, f - 0.5));
+  }
+  const m = new THREE.Mesh(new THREE.LatheGeometry(pts, 14), mat);
   m.castShadow = true;
   return m;
 }
@@ -289,18 +299,31 @@ export class Humanoid {
     nose.position.set(0, 2.19, 0.38);
     this.chest.add(nose);
 
-    // Face: eyes, eye black, facial hair. The face points +z.
-    const eyeGeo = new THREE.SphereGeometry(0.045, 8, 6);
+    // Face: eyes (whites and pupils), brows, mouth, eye black, facial hair. The face points +z.
+    const eyeGeo = new THREE.SphereGeometry(0.05, 12, 8);
+    const pupilGeo = new THREE.SphereGeometry(0.026, 8, 6);
+    const white = new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.35 });
+    const browGeo = new THREE.BoxGeometry(0.13, 0.03, 0.035);
     for (const x of [-0.13, 0.13]) {
-      const eye = new THREE.Mesh(eyeGeo, dark);
-      eye.position.set(x, 2.31, 0.33);
+      const eye = new THREE.Mesh(eyeGeo, white);
+      eye.position.set(x, 2.31, 0.325);
       this.chest.add(eye);
+      const pupil = new THREE.Mesh(pupilGeo, dark);
+      pupil.position.set(x, 2.31, 0.37);
+      this.chest.add(pupil);
+      const brow = new THREE.Mesh(browGeo, hairMat);
+      brow.position.set(x, 2.385, 0.35);
+      brow.rotation.z = x < 0 ? -0.12 : 0.12;
+      this.chest.add(brow);
       if (app.eyeBlack) {
         const eb = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.02), dark);
         eb.position.set(x, 2.22, 0.36);
         this.chest.add(eb);
       }
     }
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.022, 0.03), new THREE.MeshStandardMaterial({ color: '#7a3b33', roughness: 0.6 }));
+    mouth.position.set(0, 2.08, 0.345);
+    this.chest.add(mouth);
     const fh = app.facialHair ?? 'none';
     if (fh === 'beard' || fh === 'stubble') {
       const beard = new THREE.Mesh(
@@ -377,14 +400,15 @@ export class Humanoid {
       this.chest.add(brim);
     }
 
-    this.limbs.thighR = segment(0.27 * lw, 0.2 * lw, pants);
-    this.limbs.shinR = segment(0.2 * lw, 0.15 * lw, socks);
-    this.limbs.thighL = segment(0.27 * lw, 0.2 * lw, pants);
-    this.limbs.shinL = segment(0.2 * lw, 0.15 * lw, socks);
-    this.limbs.upperR = segment(0.17 * lw, 0.14 * lw, sleeve);
-    this.limbs.foreR = segment(0.13 * lw, 0.11 * lw, skin);
-    this.limbs.upperL = segment(0.17 * lw, 0.14 * lw, sleeve);
-    this.limbs.foreL = segment(0.13 * lw, 0.11 * lw, skin);
+    // Tapered, muscled limbs: quads, calves, biceps and forearms.
+    this.limbs.thighR = segment(0.27 * lw, 0.19 * lw, pants, 1.1, 0.3);
+    this.limbs.shinR = segment(0.19 * lw, 0.13 * lw, socks, 1.16, 0.28);
+    this.limbs.thighL = segment(0.27 * lw, 0.19 * lw, pants, 1.1, 0.3);
+    this.limbs.shinL = segment(0.19 * lw, 0.13 * lw, socks, 1.16, 0.28);
+    this.limbs.upperR = segment(0.17 * lw, 0.13 * lw, sleeve, 1.1, 0.45);
+    this.limbs.foreR = segment(0.135 * lw, 0.095 * lw, skin, 1.1, 0.2);
+    this.limbs.upperL = segment(0.17 * lw, 0.13 * lw, sleeve, 1.1, 0.45);
+    this.limbs.foreL = segment(0.135 * lw, 0.095 * lw, skin, 1.1, 0.2);
     // Short jersey sleeves over the undershirt.
     this.limbs.sleeveR = segment(0.21 * lw, 0.19 * lw, jersey);
     this.limbs.sleeveL = segment(0.21 * lw, 0.19 * lw, jersey);
@@ -424,7 +448,8 @@ export class Humanoid {
     this.feet = { R: makeShoe(), L: makeShoe() };
     this.root.add(this.feet.R, this.feet.L);
 
-    const handGeo = new THREE.SphereGeometry(0.15, 10, 8);
+    const handGeo = new THREE.SphereGeometry(0.15, 12, 10);
+    handGeo.scale(0.8, 1.1, 0.65);
     const gloveGeo = new THREE.SphereGeometry(0.3, 12, 10);
     gloveGeo.scale(1, 1.15, 0.55);
     this.hands = {

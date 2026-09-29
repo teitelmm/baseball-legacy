@@ -148,4 +148,39 @@ describe('play simulator', () => {
     expect(inPlayableArea(cf)).toBe(true);
     expect(Math.hypot(cf.x, cf.z)).toBeGreaterThan(385);
   });
+
+  it('fielders accelerate instead of starting at full speed', () => {
+    const sim = new PlaySim(setup(95, 25, -25));
+    const lf = sim.fielders.find((f) => f.pos === 'LF')!;
+    const speeds: number[] = [];
+    while (!sim.done && sim.t < 1.6) {
+      sim.step();
+      speeds.push(Math.hypot(lf.vx, lf.vz));
+    }
+    // Standing still during the read, building up over the next second.
+    expect(speeds[10]).toBe(0);
+    const at = (t: number) => speeds[Math.round(t * 60) - 1];
+    expect(at(0.7)).toBeGreaterThan(0);
+    expect(at(0.7)).toBeLessThan(at(1.4));
+  });
+
+  it('routine plays are almost always made, but not every ball is', () => {
+    let routineMade = 0;
+    let routine = 0;
+    const events = new Set<string>();
+    for (let i = 0; i < 160; i++) {
+      // Grounders right at the shortstop and lazy flies to center.
+      const r = i % 2 ? play(70 + (i % 7), -4 - (i % 5), -14 + (i % 3)) : play(82 + (i % 9), 32 + (i % 4), (i % 5) - 2);
+      routine++;
+      if (r.batterResult === 'out') routineMade++;
+    }
+    expect(routineMade / routine).toBeGreaterThan(0.95);
+    for (let i = 0; i < 900; i++) {
+      const sim = new PlaySim(setup(60 + (i % 50), -15 + ((i * 7) % 60), -40 + ((i * 13) % 80), [i % 3 === 0, false, false]));
+      sim.run();
+      for (const e of sim.events) events.add(e.type);
+    }
+    // Over many balls in play, fielders dive, bobble, let balls get past, and sometimes throw wide.
+    for (const t of ['dive', 'bobble', 'miss', 'wide']) expect(events.has(t)).toBe(true);
+  }, 30000);
 });

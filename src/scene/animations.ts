@@ -1,5 +1,5 @@
 import { SWING_TIME_MS } from '../core/constants';
-import type { Keyframes, Pose } from './humanoid';
+import { lerpPose, type Keyframes, type Pose } from './humanoid';
 
 // All poses are in the model's root space: it faces +z and its right side is -x.
 // Batter: the plate is +z, the pitcher +x (mirrored for lefties).
@@ -227,66 +227,186 @@ export const UMPIRE_POSE: Pose = {
   footL: [1.0, 0.2, 0.1],
 };
 
-export function fielderReadyPose(phase: number): Pose {
-  const b = Math.sin(phase) * 0.03;
-  return {
-    pelvis: [0, 2.7 + b, 0],
-    pelvisRot: [0.15, 0, 0],
-    chestRot: [0.35, 0, 0],
-    handR: [-0.75, 2.5 + b, 0.9],
-    handL: [0.75, 2.5 + b, 0.9],
-    footR: [-1.05, 0.2, 0],
-    footL: [1.05, 0.2, 0],
-    footYawR: 0.3,
-    footYawL: -0.3,
+/**
+ * Fielder between pitches (`ready` 0) and in the athletic crouch as the pitch is
+ * delivered (`ready` 1): feet wide, knees bent, glove out front.
+ */
+export function fielderReadyPose(phase: number, ready = 1): Pose {
+  const b = Math.sin(phase) * 0.03 * (1 - ready * 0.6);
+  const relaxed: Pose = {
+    pelvis: [0, 3.02 + b, 0],
+    pelvisRot: [0.04, 0, 0],
+    chestRot: [0.06, 0, 0],
+    handR: [-0.85, 2.85 + b, 0.35],
+    handL: [0.8, 3.0 + b, 0.55],
+    footR: [-0.75, 0.2, 0],
+    footL: [0.75, 0.2, 0.1],
+    footYawR: 0.25,
+    footYawL: -0.25,
   };
+  const crouch: Pose = {
+    pelvis: [0, 2.55 + b, -0.1],
+    pelvisRot: [0.32, 0, 0],
+    chestRot: [0.42, 0, 0],
+    handR: [-0.45, 2.35 + b, 1.25],
+    handL: [0.5, 2.3 + b, 1.45],
+    footR: [-1.25, 0.2, 0],
+    footL: [1.25, 0.2, 0.1],
+    footYawR: 0.35,
+    footYawL: -0.35,
+  };
+  return lerpPose(relaxed, crouch, Math.max(0, Math.min(1, ready)));
 }
 
 // ---------------------------------------------------------------------------
 // Running, fielding and throwing
 
-/** Run cycle. `phase` advances with distance run; `amt` 0..1 is how hard he's running. */
+/**
+ * Sprint cycle. `phase` advances with distance run (2π per two strides); `amt` 0..1 is
+ * how hard he's running. Each foot plants in front, pushes back under the body, then
+ * kicks up behind and drives the knee through; the arms pump opposite the legs.
+ */
 export function runPose(phase: number, amt: number): Pose {
+  const a = Math.max(0, Math.min(1, amt));
+  const stride = 0.55 + 0.85 * a;
+  const kick = 0.3 + 0.8 * a;
+  const foot = (ph: number): [number, number] => {
+    const u = (((ph / (Math.PI * 2)) % 1) + 1) % 1;
+    if (u < 0.4) {
+      // Stance: foot on the ground sliding back from in front to behind.
+      return [0.2, stride - (2 * stride * u) / 0.4];
+    }
+    // Swing: heel kicks up behind, then the knee drives forward.
+    const w = (u - 0.4) / 0.6;
+    const z = -stride + 2 * stride * (w * w * (3 - 2 * w));
+    const y = 0.2 + kick * Math.sin(Math.PI * w) * (w < 0.5 ? 1 : 0.85);
+    return [y, z];
+  };
+  const [yR, zR] = foot(phase);
+  const [yL, zL] = foot(phase + Math.PI);
   const s = Math.sin(phase);
-  const c = Math.cos(phase);
+  const bob = Math.cos(phase * 2) * 0.07 * a;
+  // Arms bent about 90°, pumping forward/back and rising as they come forward.
+  const arm = (dir: number): [number, number] => [3.75 + 0.35 * a * Math.max(0, dir), 0.35 + 0.95 * a * dir];
+  const [hyR, hzR] = arm(-s);
+  const [hyL, hzL] = arm(s);
   return {
-    pelvis: [0, 2.95 + Math.abs(c) * 0.12 * amt, 0],
-    pelvisRot: [0.1 * amt, s * 0.1 * amt, 0],
-    chestRot: [0.25 * amt, -s * 0.2 * amt, 0],
-    footR: [-0.36, 0.2 + Math.max(0, s) * 0.9 * amt, s * 1.35 * amt],
-    footL: [0.36, 0.2 + Math.max(0, -s) * 0.9 * amt, -s * 1.35 * amt],
-    handR: [-0.85, 3.7, 0.35 - s * 1.0 * amt],
-    handL: [0.85, 3.7, 0.35 + s * 1.0 * amt],
+    pelvis: [0, 2.98 - 0.12 * a + bob, 0.05 * a],
+    pelvisRot: [0.1 + 0.1 * a, s * 0.12 * a, 0],
+    chestRot: [0.12 + 0.2 * a, -s * 0.18 * a, 0],
+    footR: [-0.34, yR, zR],
+    footL: [0.34, yL, zL],
+    handR: [-0.82, hyR, hzR],
+    handL: [0.82, hyL, hzL],
   };
 }
 
-/** Reaching for the ball with the glove (left) hand at a given height. */
+/**
+ * Glove (left hand) reaching for the ball at a point in the fielder's own space, over
+ * a base pose (running or set). Low balls bend him down; high ones stretch him up.
+ */
+export function reachPose(base: Pose, ball: [number, number, number]): Pose {
+  const [bx, by, bz] = ball;
+  const low = by < 2.2;
+  const high = by > 6;
+  // Keep the glove within arm's reach of the left shoulder.
+  const sx = 0.74;
+  const sy = low ? 3.9 : high ? 5.2 : 4.6;
+  let dx = bx - sx;
+  let dy = by - sy;
+  let dz = bz - 0.1;
+  const len = Math.hypot(dx, dy, dz);
+  const maxLen = 2.0;
+  if (len > maxLen) {
+    dx *= maxLen / len;
+    dy *= maxLen / len;
+    dz *= maxLen / len;
+  }
+  const glove: [number, number, number] = [sx + dx, sy + dy, Math.max(0.4, 0.1 + dz)];
+  const p: Pose = { ...base, handL: glove };
+  if (low) {
+    p.pelvis = [base.pelvis[0], Math.min(base.pelvis[1], 2.35), base.pelvis[2]];
+    p.pelvisRot = [0.45, base.pelvisRot[1], 0];
+    p.chestRot = [0.6, base.chestRot[1], 0];
+    // Throwing hand comes over to cover the glove on a grounder.
+    p.handR = [glove[0] - 0.45, glove[1] + 0.25, glove[2] - 0.05];
+  } else if (high) {
+    p.chestRot = [-0.1, base.chestRot[1], 0];
+    p.handR = [glove[0] - 0.5, glove[1] - 0.3, glove[2] - 0.1];
+  }
+  return p;
+}
+
+/** Laying out for a ball: arms stretched ahead, legs trailing (the root is tipped forward by the caller). */
+export function divePose(): Pose {
+  return {
+    pelvis: [0, 3.0, 0],
+    pelvisRot: [0.05, 0, 0],
+    chestRot: [0.1, 0, 0],
+    handR: [-0.35, 6.1, 0.6],
+    handL: [0.35, 6.3, 0.8],
+    footR: [-0.45, 0.35, -0.5],
+    footL: [0.45, 0.6, -0.9],
+  };
+}
+
+/** Ball in hand after a catch: glove and throwing hand together at the chest. */
+export function transferPose(): Pose {
+  return {
+    pelvis: [0, 2.85, 0],
+    pelvisRot: [0.12, -0.25, 0],
+    chestRot: [0.15, -0.35, 0],
+    handR: [-0.15, 4.45, 0.95],
+    handL: [0.25, 4.35, 1.05],
+    footR: [-0.7, 0.2, -0.2],
+    footL: [0.7, 0.2, 0.4],
+    footYawR: 0.4,
+    footYawL: -0.1,
+  };
+}
+
+/** Reaching down to pick up a ball on the ground in front of him. */
+export function pickupPose(): Pose {
+  return {
+    pelvis: [0, 2.2, -0.2],
+    pelvisRot: [0.5, 0, 0],
+    chestRot: [0.75, 0, 0],
+    handR: [-0.3, 0.9, 1.9],
+    handL: [0.3, 0.7, 2.0],
+    footR: [-1.0, 0.2, -0.2],
+    footL: [1.0, 0.2, 0.5],
+  };
+}
+
+/** Reaching with the glove at a given height straight ahead. */
 export function catchPose(height: number): Pose {
-  const h = Math.max(0.6, Math.min(6.5, height));
-  return {
-    pelvis: [0, h < 2 ? 2.3 : 2.9, 0],
-    pelvisRot: [h < 2 ? 0.4 : 0.1, 0, 0],
-    chestRot: [h < 2 ? 0.5 : 0.1, 0, 0],
-    footR: [-0.8, 0.2, -0.1],
-    footL: [0.8, 0.2, 0.2],
-    handR: [-0.3, h, 1.3],
-    handL: [0.3, h, 1.4],
-  };
+  return reachPose(fielderReadyPose(0, 0.6), [0.4, Math.max(0.6, Math.min(6.8, height)), 1.6]);
 }
 
-/** Throwing motion, t 0..1 (release around 0.55). */
+/**
+ * Crow-hop throw, t 0..1 (release around 0.55): step toward the target, arm up and
+ * back, whip it over the top, follow through across the body.
+ */
 export function throwPose(t: number): Pose {
   const k = Math.min(1, Math.max(0, t));
-  const cock = Math.min(1, k / 0.5);
-  const fire = Math.max(0, (k - 0.5) / 0.5);
+  const cock = Math.min(1, k / 0.45);
+  const fire = Math.max(0, Math.min(1, (k - 0.45) / 0.2));
+  const follow = Math.max(0, (k - 0.65) / 0.35);
+  const hand: [number, number, number] =
+    k < 0.45
+      ? [-0.6 - 0.7 * cock, 4.4 + 1.3 * cock, 0.6 - 2.0 * cock]
+      : k < 0.65
+        ? [-1.3 + 1.0 * fire, 5.7 - 0.1 * fire, -1.4 + 3.2 * fire]
+        : [-0.3 + 0.9 * follow, 5.6 - 2.8 * follow, 1.8 - 0.3 * follow];
   return {
-    pelvis: [0, 2.9, 0.4 * fire],
-    pelvisRot: [0.2 * fire, -0.7 * (1 - fire) + 0.4 * fire, 0],
-    chestRot: [0.5 * fire, -0.6 * (1 - fire) + 0.6 * fire, 0],
-    footR: [-0.5, 0.2, -0.6],
-    footL: [0.5, 0.2, 1.2],
-    handR: [-1.3 + 1.8 * fire, 5.0 - 2.2 * fire, -1.2 * cock * (1 - fire) + 2.2 * fire],
-    handL: [0.9, 4.2 - fire, 1.2 - fire],
+    pelvis: [0, 2.9 - 0.25 * fire, 0.2 + 0.5 * fire],
+    pelvisRot: [0.1 + 0.25 * fire, -0.8 * (1 - fire) + 0.35 * fire, 0],
+    chestRot: [0.05 + 0.55 * fire, -0.75 * (1 - fire) + 0.7 * fire, 0],
+    footR: [-0.5, 0.2 + 0.5 * follow, -0.7 + 0.9 * follow],
+    footL: [0.45, 0.2 + 0.4 * cock * (1 - fire), 0.4 + 1.1 * Math.max(cock * 0.6, fire)],
+    handR: hand,
+    // The glove arm points at the target, then tucks.
+    handL: [0.9 - 0.5 * fire, 4.7 - 1.2 * fire, 1.4 - 0.6 * fire],
   };
 }
 

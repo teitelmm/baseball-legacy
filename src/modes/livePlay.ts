@@ -119,8 +119,8 @@ export class LivePlay {
   private fielderShot(x: number, z: number) {
     // Behind the fielder, looking in toward the infield / the ball.
     const back = new THREE.Vector3(x, 0, z).normalize();
-    const pos = new THREE.Vector3(x + back.x * 26, 11, z + back.z * 26);
-    return { pos, look: this.camLook.clone(), fov: 55 };
+    const pos = new THREE.Vector3(x + back.x * 30, 12, z + back.z * 30);
+    return { pos, look: this.camLook.clone(), fov: 58 };
   }
 
   update(dt: number): void {
@@ -138,7 +138,8 @@ export class LivePlay {
 
     if (this.userPosition) {
       const f = this.userFielder();
-      const target = new THREE.Vector3(bp.x, Math.min(bp.y, 45), bp.z);
+      // Don't tilt up so far on a high fly that your fielder drops out of the frame.
+      const target = new THREE.Vector3(bp.x, Math.min(bp.y, 24), bp.z);
       if (this.sim.ball.kind !== 'path') target.set((f.x + basePos(2).x) / 2, 5, (f.z + basePos(2).z) / 2);
       this.camLook.lerp(target, Math.min(1, dt * 4));
       const shot = this.fielderShot(f.x, f.z);
@@ -169,6 +170,19 @@ export class LivePlay {
         case 'catch':
           sfx.mittPop(80);
           if (e.air && e.pos === this.userPosition) hud.flash('Caught it!');
+          else if (e.dive) hud.flash(`Diving stop by the ${e.pos}!`);
+          break;
+        case 'dive':
+          if (!e.caught) hud.flash(`${e.pos} dives... can't get it!`);
+          break;
+        case 'bobble':
+          hud.flash(e.air ? `${e.pos} drops it!` : `${e.pos} bobbles it!`);
+          break;
+        case 'miss':
+          hud.flash(`Past the ${e.pos}!`);
+          break;
+        case 'wide':
+          hud.flash(`Wide throw pulls the ${e.pos} off the bag!`);
           break;
         case 'throw':
           sfx.whoosh();

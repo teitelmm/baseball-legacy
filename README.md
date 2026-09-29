@@ -91,6 +91,16 @@ or pause menu) finishes the game instantly. A box score appears at the end.
 Fielders chase, catch and throw; runners run, take extra bases, tag up and get forced out. Pitchers tire
 (watch the stamina bar) and the manager goes to the bullpen.
 
+Fielding is realistic rather than automatic:
+- **Movement:** fielders take a moment to read the ball, then accelerate up to a sprint. Outfielders are a
+  step slower going back on a ball over their heads.
+- **Catching:** it isn't guaranteed. Balls at the edge of a fielder's reach, running catches and hard-hit
+  grounders and liners are harder. Misses either get past the fielder or get bobbled and picked up late.
+- **Diving:** fielders lay out for balls just out of reach, and sometimes come up with them.
+- **Throwing:** long throws and weaker arms go wide more often, pulling the receiver off the bag.
+- **What you see:** fielders crouch into a ready stance as the pitch is delivered, reach the glove to where
+  the ball actually is, and crow-hop and throw toward the base.
+
 ## Controls
 
 **Hitting**

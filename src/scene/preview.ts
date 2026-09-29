@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Handedness, TeamColors } from '../core/types';
 import { BATTER_STANCE, fielderReadyPose } from './animations';
 import { teamAppearance } from './actors';
-import { Humanoid, type Appearance } from './humanoid';
+import { Humanoid, type Appearance, type Pose } from './humanoid';
 
 /** Your player on the field, slowly turning, for the home screen and the creator. */
 export class PlayerPreview {
@@ -12,6 +12,8 @@ export class PlayerPreview {
   private readonly spot = new THREE.Vector3(0, 0, -20);
   private withBat = true;
   visible = false;
+  /** Test hook: hold a specific pose (and turn) instead of the idle stance. */
+  debugPose: { pose: Pose; rotX?: number; spin?: number } | null = null;
 
   constructor(private readonly scene: THREE.Scene) {}
 
@@ -39,8 +41,10 @@ export class PlayerPreview {
   update(dt: number, now: number, camera: THREE.PerspectiveCamera, panelFraction: number): void {
     if (!this.model || !this.visible) return;
     this.spin += dt * 0.5;
-    this.model.root.rotation.y = this.spin;
-    this.model.apply(this.withBat ? BATTER_STANCE : fielderReadyPose(now / 700));
+    this.model.root.rotation.order = 'YXZ';
+    this.model.root.rotation.y = this.debugPose?.spin ?? this.spin;
+    this.model.root.rotation.x = this.debugPose?.rotX ?? 0;
+    this.model.apply(this.debugPose ? this.debugPose.pose : this.withBat ? BATTER_STANCE : fielderReadyPose(now / 700));
     const h = 6.1 * this.model.scale;
     const target = this.spot.clone().add(new THREE.Vector3(0, h * 0.52, 0));
     camera.fov = 32;

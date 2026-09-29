@@ -147,7 +147,7 @@ try {
   await page.evaluate(() => window.__game.setTimeScale(1));
 
   await page.evaluate(() => window.__game.setAuto(true));
-  await page.waitForFunction(() => window.__game.snapshot().pitching.pitches >= 25, null, { timeout: 180000 });
+  await page.waitForFunction(() => window.__game.snapshot().pitching.pitches >= 25, null, { timeout: 420000 });
   const pit = await page.evaluate(() => window.__game.snapshot());
   console.log('pitching snapshot', JSON.stringify(pit));
   check(pit.pitching.pitches >= 25, 'pitching: pitches thrown');

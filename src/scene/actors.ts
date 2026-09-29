@@ -6,13 +6,16 @@ import { BASES, FIELD_SPOTS, type XZ } from '../sim/field';
 import type { PlaySim } from '../sim/playSim';
 import {
   BATTER_STANCE,
-  catchPose,
   catcherPose,
+  divePose,
   fielderReadyPose,
   LEADOFF_POSE,
+  pickupPose,
   pitcherSetPose,
+  reachPose,
   runPose,
   throwPose,
+  transferPose,
   UMPIRE_POSE,
 } from './animations';
 import type { PlayerProfile } from '../sim/profile';
@@ -72,7 +75,11 @@ interface Mover {
   lastX: number;
   lastZ: number;
   throwAt: number;
+  /** 0 = relaxed between pitches, 1 = crouched and ready (eased). */
+  ready: number;
 }
+
+const tmpBall = new THREE.Vector3();
 
 /**
  * Every player on the field: nine fielders (pitcher and catcher included), the batter,
@@ -135,7 +142,7 @@ export class FieldActors {
       const lefty = pos === 'P' && this.pitcherThrows === 'L';
       const model = new Humanoid({ ...teamAppearance(this.defense, i), gloveHand: 'L' }, { mirrored: lefty });
       this.group.add(model.root);
-      this.fielders.set(pos, { model, phase: i, lastX: 0, lastZ: 0, throwAt: -1 });
+      this.fielders.set(pos, { model, phase: i, lastX: 0, lastZ: 0, throwAt: -1, ready: 0 });
     });
     this.resetDefense();
   }
@@ -147,7 +154,7 @@ export class FieldActors {
       const model = new Humanoid({ ...teamAppearance(this.offense, i + 3), gloveHand: null });
       model.root.visible = false;
       this.group.add(model.root);
-      this.runners.push({ model, phase: 0, lastX: 0, lastZ: 0, throwAt: -1 });
+      this.runners.push({ model, phase: 0, lastX: 0, lastZ: 0, throwAt: -1, ready: 0 });
     }
   }
 
@@ -161,7 +168,7 @@ export class FieldActors {
     this.group.remove(old.model.root);
     const model = new Humanoid({ ...teamAppearance(this.defense, 0), ...look, gloveHand: 'L' }, { mirrored: throws === 'L' });
     this.group.add(model.root);
-    this.fielders.set('P', { model, phase: 0, lastX: 0, lastZ: 0, throwAt: -1 });
+    this.fielders.set('P', { model, phase: 0, lastX: 0, lastZ: 0, throwAt: -1, ready: 0 });
     this.resetDefense();
   }
 
@@ -172,7 +179,7 @@ export class FieldActors {
     const i = FIELD_POSITIONS.indexOf(pos);
     const model = new Humanoid({ ...teamAppearance(this.defense, i), ...look, gloveHand: 'L' });
     this.group.add(model.root);
-    this.fielders.set(pos, { model, phase: i, lastX: 0, lastZ: 0, throwAt: -1 });
+    this.fielders.set(pos, { model, phase: i, lastX: 0, lastZ: 0, throwAt: -1, ready: 0 });
     this.resetDefense();
   }
 
@@ -191,6 +198,8 @@ export class FieldActors {
   resetDefense(): void {
     for (const [pos, m] of this.fielders) {
       const root = m.model.root;
+      root.rotation.x = 0;
+      m.ready = 0;
       if (pos === 'P') {
         root.position.set(0, MOUND_HEIGHT, RUBBER_Z);
         root.rotation.y = 0;
@@ -203,7 +212,7 @@ export class FieldActors {
         const s = FIELD_SPOTS[pos];
         root.position.set(s.x, 0, s.z);
         root.rotation.y = Math.atan2(-s.x, -s.z);
-        m.model.apply(fielderReadyPose(m.phase));
+        m.model.apply(fielderReadyPose(m.phase, 0));
       }
       m.lastX = root.position.x;
       m.lastZ = root.position.z;
@@ -211,10 +220,16 @@ export class FieldActors {
     if (this.batter) this.batter.root.visible = true;
   }
 
-  /** Idle breathing for fielders between pitches. */
-  idle(now: number): void {
+  /**
+   * Fielders between pitches: relaxed, then settling into the ready crouch as the
+   * pitcher delivers (`ready` true during the windup and the pitch).
+   */
+  idle(now: number, ready = false, dt = 1 / 60): void {
     for (const [pos, m] of this.fielders) {
-      if (pos !== 'P' && pos !== 'C') m.model.apply(fielderReadyPose(now / 600 + m.phase));
+      if (pos === 'P' || pos === 'C') continue;
+      m.model.root.rotation.x = 0;
+      m.ready += ((ready ? 1 : 0) - m.ready) * Math.min(1, dt * 5);
+      m.model.apply(fielderReadyPose(now / 600 + m.phase, m.ready));
     }
   }
 
@@ -242,32 +257,81 @@ export class FieldActors {
   /** Move everyone to match the play simulation. */
   applyPlay(sim: PlaySim, contactElapsed: number): void {
     const ball = sim.ballPosition();
-    const holder = sim.ball.kind === 'held' ? sim.fielders[sim.ball.holder].pos : null;
-    for (const f of sim.fielders) {
+    const b = sim.ball;
+    const holderIdx = b.kind === 'held' || b.kind === 'loose' ? b.holder : -1;
+    sim.fielders.forEach((f, idx) => {
       const m = this.fielders.get(f.pos)!;
       const root = m.model.root;
+      root.rotation.order = 'YXZ';
       const moved = Math.hypot(f.x - m.lastX, f.z - m.lastZ);
       m.lastX = f.x;
       m.lastZ = f.z;
       root.position.set(f.x, moundY(f.x, f.z), f.z);
+      root.rotation.x = 0;
       const speed = Math.hypot(f.vx, f.vz);
-      if (f.pos === 'C' && contactElapsed < 0.4) continue;
-      if (speed > 1) {
-        root.rotation.y = Math.atan2(f.vx, f.vz);
-        m.phase += moved * 0.45;
-        m.model.apply(runPose(m.phase, Math.min(1, speed / 22)));
-      } else {
-        root.rotation.y = Math.atan2(ball.x - f.x, ball.z - f.z);
-        const near = Math.hypot(ball.x - f.x, ball.z - f.z) < 8 && sim.ball.kind === 'path';
-        if (sim.ball.kind === 'thrown' && sim.events.some((e) => e.type === 'throw' && e.from === f.pos && sim.t - e.time < 0.5)) {
-          m.model.apply(throwPose((sim.t - (sim.events.filter((e) => e.type === 'throw' && e.from === f.pos).pop()!.time - 0.3)) / 0.6));
-        } else if (near || holder === f.pos) {
-          m.model.apply(catchPose(holder === f.pos ? 4 : ball.y + 1));
-        } else {
-          m.model.apply(fielderReadyPose(sim.t * 2 + m.phase));
-        }
+      if (f.pos === 'C' && contactElapsed < 0.4) return;
+      const faceBall = () => (root.rotation.y = Math.atan2(ball.x - f.x, ball.z - f.z));
+
+      // Laying out: tip forward, slide, then get back up.
+      if (f.dive) {
+        const t = sim.t - f.dive.t0;
+        root.rotation.y = Math.atan2(f.dive.dx, f.dive.dz);
+        const down = Math.min(1, t / 0.25);
+        const up = Math.max(0, (t - 0.55) / 0.35);
+        const tip = 1.35 * down * (1 - up);
+        root.rotation.x = tip;
+        root.position.y += 0.2 * Math.sin(tip);
+        m.model.apply(divePose());
+        return;
       }
-    }
+
+      // Throwing: face the base and go through the crow hop.
+      const lastThrow = [...sim.events].reverse().find((e) => e.type === 'throw' && e.from === f.pos);
+      if (lastThrow && lastThrow.type === 'throw' && sim.t - lastThrow.time < 0.55) {
+        const target = BASES[lastThrow.to % 4];
+        root.rotation.y = Math.atan2(target.x - f.x, target.z - f.z);
+        m.model.apply(throwPose((sim.t - lastThrow.time + 0.3) / 0.75));
+        return;
+      }
+
+      // Ball in hand: bring it to the throwing hand, turning toward where he'll throw.
+      if (idx === holderIdx && b.kind === 'held') {
+        faceBall();
+        m.model.apply(speed > 1 ? runPose((m.phase += moved * 0.45), Math.min(1, speed / 26)) : transferPose());
+        return;
+      }
+      // Bobbled ball on the ground: go get it and scoop it up.
+      if (idx === holderIdx && b.kind === 'loose') {
+        faceBall();
+        const d = Math.hypot(ball.x - f.x, ball.z - f.z);
+        m.model.apply(d < 4 ? pickupPose() : runPose((m.phase += moved * 0.45), Math.min(1, speed / 26)));
+        return;
+      }
+
+      const base = speed > 1 ? runPose((m.phase += moved * 0.45), Math.min(1, speed / 26)) : fielderReadyPose(sim.t * 2 + m.phase, 1);
+      if (speed > 1) root.rotation.y = Math.atan2(f.vx, f.vz);
+      else faceBall();
+
+      // Ball coming to him: reach the glove to where it is (in his own space).
+      const dBall = Math.hypot(ball.x - f.x, ball.z - f.z);
+      if (b.kind === 'path' && dBall < 12 && ball.y < 9) {
+        root.updateMatrixWorld();
+        tmpBall.set(ball.x, ball.y, ball.z);
+        root.worldToLocal(tmpBall);
+        m.model.apply(reachPose(base, [tmpBall.x, tmpBall.y, tmpBall.z]));
+        return;
+      }
+      // Taking a throw at a base: glove up as a target.
+      if (b.kind === 'thrown' && b.receiver === idx) {
+        faceBall();
+        root.updateMatrixWorld();
+        tmpBall.set(ball.x, Math.max(2, ball.y), ball.z);
+        root.worldToLocal(tmpBall);
+        m.model.apply(reachPose(speed > 1 ? base : fielderReadyPose(0, 0.4), [tmpBall.x * 0.3, Math.min(6, tmpBall.y), 1.8]));
+        return;
+      }
+      m.model.apply(base);
+    });
 
     // Runners (the batter-runner replaces the batter once he drops the bat).
     const showBatterModel = contactElapsed < 0.35;

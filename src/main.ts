@@ -15,6 +15,7 @@ import { PauseMenu } from './ui/menu';
 import { Home } from './ui/home';
 import { ProfileStore } from './core/storage';
 import { PlayerPreview } from './scene/preview';
+import { divePose, fielderReadyPose, pickupPose, reachPose, runPose, throwPose, transferPose } from './scene/animations';
 import { SeasonHub } from './ui/seasonHub';
 import { finalRatings, newProfile, setPositions, type PlayerProfile } from './sim/profile';
 import type { UserRole } from './sim/team';
@@ -229,5 +230,19 @@ if (new URLSearchParams(location.search).has('test')) {
     setPlateLoc: (x: number, y: number) => input.setPlateLoc({ x, y }, cam.camera),
     quit: quitToMenu,
     season: () => hub.state,
+    /** Hold a fielding pose on the home-screen preview model (for checking animations). */
+    previewPose: (name: string, t = 0, spin = 0.9) => {
+      const poses: Record<string, () => ReturnType<typeof runPose>> = {
+        ready: () => fielderReadyPose(0, t),
+        run: () => runPose(t, 1),
+        reachLow: () => reachPose(fielderReadyPose(0, 1), [0.9, 0.5, 2.0]),
+        reachHigh: () => reachPose(runPose(t, 0.6), [0.6, 7.2, 1.2]),
+        dive: () => divePose(),
+        transfer: () => transferPose(),
+        pickup: () => pickupPose(),
+        throw: () => throwPose(t),
+      };
+      preview.debugPose = { pose: poses[name](), rotX: name === 'dive' ? 1.2 : 0, spin };
+    },
   };
 }

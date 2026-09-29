@@ -629,7 +629,8 @@ export class AtBatSession {
       }
     }
 
-    if (!this.inPlay) this.actors.idle(now);
+    // Fielders settle into their ready crouch as the pitcher delivers.
+    if (!this.inPlay) this.actors.idle(now, this.phase === 'windup' || this.phase === 'flight', dt);
     this.cam.update(dt);
   }
 
