@@ -33,7 +33,7 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#cfe3f5', 900, 3200);
-scene.add(buildStadium(renderer));
+buildStadium(renderer, scene);
 
 const cam = new CameraRig(window.innerWidth / window.innerHeight);
 cam.setShot('batting', cam.battingShot('R'), true);

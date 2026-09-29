@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
 import {
   BASE_DISTANCE,
   fenceDistance,
@@ -32,6 +33,90 @@ function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingCo
   return [c, c.getContext('2d')!];
 }
 
+/** Seeded random so the ground and crowd look the same on every load. */
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Break up flat colors: soft light/dark patches (worn grass, damp dirt) plus fine grain.
+ * Transparent pixels stay transparent.
+ */
+function weather(canvas: HTMLCanvasElement, grain: number, patches: number, patchPx: number, seed: number): void {
+  const ctx = canvas.getContext('2d')!;
+  const rand = seededRandom(seed);
+  const { width: w, height: h } = canvas;
+  if (patches > 0) {
+    const [small, sctx] = makeCanvas(Math.max(2, Math.ceil(w / patchPx)), Math.max(2, Math.ceil(h / patchPx)));
+    const img = sctx.createImageData(small.width, small.height);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = 128 + (rand() - 0.5) * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    sctx.putImageData(img, 0, 0);
+    const [big, bctx] = makeCanvas(w, h);
+    bctx.imageSmoothingEnabled = true;
+    bctx.imageSmoothingQuality = 'high';
+    bctx.drawImage(small, 0, 0, w, h);
+    // Keep the patches off transparent areas.
+    bctx.globalCompositeOperation = 'destination-in';
+    bctx.drawImage(canvas, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = patches;
+    ctx.drawImage(big, 0, 0);
+    ctx.restore();
+  }
+  if (grain > 0) {
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const n = (rand() - 0.5) * grain;
+      d[i] += n;
+      d[i + 1] += n * 1.05;
+      d[i + 2] += n * 0.8;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+}
+
+/** Tiling grayscale noise used as a bump map: blades of grass and grains of dirt up close. */
+function detailBump(maxAniso: number): THREE.CanvasTexture {
+  const [c, ctx] = makeCanvas(256, 256);
+  const rand = seededRandom(77);
+  const img = ctx.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 90 + rand() * 120;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  // Short streaks read as grass blades.
+  for (let i = 0; i < 1400; i++) {
+    const x = rand() * 256;
+    const y = rand() * 256;
+    ctx.strokeStyle = rand() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (rand() - 0.5) * 3, y + 2 + rand() * 4);
+    ctx.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
 interface GroundRegion {
   xmin: number;
   xmax: number;
@@ -52,12 +137,14 @@ function groundTexture(region: GroundRegion, draw: (ctx: CanvasRenderingContext2
   return tex;
 }
 
-function groundPlane(region: GroundRegion, tex: THREE.Texture, y: number, transparent: boolean): THREE.Mesh {
+function groundPlane(region: GroundRegion, tex: THREE.Texture, y: number, transparent: boolean, bump: THREE.Texture): THREE.Mesh {
   const w = region.xmax - region.xmin;
   const h = region.zmax - region.zmin;
+  const bumpMap = bump.clone();
+  bumpMap.repeat.set(w / 3, h / 3);
   const m = new THREE.Mesh(
     new THREE.PlaneGeometry(w, h),
-    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95, transparent, depthWrite: !transparent }),
+    new THREE.MeshStandardMaterial({ map: tex, bumpMap, bumpScale: 1.2, roughness: 0.95, transparent, depthWrite: !transparent }),
   );
   m.rotation.x = -Math.PI / 2;
   m.position.set((region.xmin + region.xmax) / 2, y, (region.zmin + region.zmax) / 2);
@@ -104,6 +191,8 @@ function drawField(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number) =
     }
   }
   ctx.restore();
+
+  weather(ctx.canvas, 14, 0.35, 18 * s, 11);
 
   // Foul lines all the way to the poles.
   ctx.strokeStyle = CHALK;
@@ -164,6 +253,8 @@ function drawInfield(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number)
   circle(mound[0], mound[1] - 1.5, 9, DIRT);
   circle(0, -PLATE_DEPTH / 2, 13, DIRT);
 
+  weather(ctx.canvas, 16, 0.28, 5 * s, 23);
+
   // Base paths (dirt strips outside the grass).
   ctx.strokeStyle = CHALK;
   ctx.lineWidth = Math.max(1, 0.3 * s);
@@ -194,26 +285,100 @@ function drawInfield(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number)
 }
 
 function crowdTexture(maxAniso: number): THREE.CanvasTexture {
-  const [c, ctx] = makeCanvas(1024, 512);
-  ctx.fillStyle = '#2b2f3a';
+  const [c, ctx] = makeCanvas(2048, 1024);
+  const rand = seededRandom(5);
+  const pick = <T,>(a: T[]) => a[Math.floor(rand() * a.length)];
+  ctx.fillStyle = '#3a404c';
   ctx.fillRect(0, 0, c.width, c.height);
-  const colors = ['#e8e8e8', '#c8342c', '#27407a', '#f0c24a', '#6d8fbf', '#f2f2f2', '#8a2b2b', '#1e1e1e', '#d9a47c', '#6b4a33'];
-  const rowH = 16;
-  for (let row = 0; row < c.height / rowH; row++) {
-    ctx.fillStyle = row % 2 ? '#343947' : '#3a3f4d';
-    ctx.fillRect(0, row * rowH + rowH - 4, c.width, 4);
-    for (let x = 0; x < c.width; x += 7) {
-      if (Math.random() < 0.18) continue;
-      ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)];
-      ctx.fillRect(x + Math.random() * 2, row * rowH + 3 + Math.random() * 2, 5, 8);
-      ctx.fillStyle = Math.random() < 0.5 ? '#d9a47c' : '#8a5a3c';
-      ctx.fillRect(x + 1 + Math.random() * 2, row * rowH, 3, 3);
+  const shirts = ['#f2f2f2', '#e6e6e6', '#1d3b72', '#27407a', '#c8342c', '#b3261e', '#f0c24a', '#6d8fbf', '#2c2c2c', '#8a2b2b', '#3f7a4f', '#d9d2c3', '#ffffff', '#1d3b72'];
+  const skins = ['#f1c9a5', '#e0b48f', '#c68d62', '#a86f4c', '#8d5a3b', '#6b4430'];
+  const hats = ['#1d3b72', '#1d3b72', '#b3261e', '#222', '#f2f2f2'];
+  const rowH = 26;
+  const seatW = 14;
+  const aisleEvery = 22;
+  for (let row = 0; row * rowH < c.height; row++) {
+    const y = row * rowH;
+    // Concrete step and seat backs.
+    ctx.fillStyle = '#4a505c';
+    ctx.fillRect(0, y + rowH - 6, c.width, 6);
+    ctx.fillStyle = '#2a3346';
+    ctx.fillRect(0, y + rowH - 12, c.width, 6);
+    for (let k = 0; k * seatW < c.width; k++) {
+      const x = k * seatW;
+      if (k % aisleEvery === aisleEvery - 1) {
+        ctx.fillStyle = '#6a707a';
+        ctx.fillRect(x, y, seatW, rowH);
+        continue;
+      }
+      if (rand() < 0.12) {
+        // Empty seat.
+        ctx.fillStyle = '#23407a';
+        ctx.fillRect(x + 2, y + 9, seatW - 4, 10);
+        continue;
+      }
+      const jitter = (rand() - 0.5) * 3;
+      const cx = x + seatW / 2 + jitter;
+      // Shoulders/torso with a little shading at the bottom.
+      ctx.fillStyle = pick(shirts);
+      ctx.beginPath();
+      ctx.roundRect(cx - 5.5, y + 10, 11, 12, 4);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(cx - 5.5, y + 18, 11, 4);
+      // Head, sometimes with a cap.
+      ctx.fillStyle = pick(skins);
+      ctx.beginPath();
+      ctx.arc(cx, y + 6.5 + (rand() - 0.5) * 2, 4, 0, Math.PI * 2);
+      ctx.fill();
+      if (rand() < 0.35) {
+        ctx.fillStyle = pick(hats);
+        ctx.beginPath();
+        ctx.arc(cx, y + 5.5, 4.2, Math.PI, 0);
+        ctx.fill();
+      }
     }
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = maxAniso;
+  return tex;
+}
+
+/** Padded outfield wall: dark green panels with seams and a few ad boards (tiles every 240 ft). */
+function wallTexture(maxAniso: number): THREE.CanvasTexture {
+  const [c, ctx] = makeCanvas(2048, 96);
+  const g = ctx.createLinearGradient(0, 0, 0, c.height);
+  g.addColorStop(0, '#2f7550');
+  g.addColorStop(0.12, '#255f41');
+  g.addColorStop(1, '#1b4a32');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, c.width, c.height);
+  const pxPerFt = c.width / 240;
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  for (let x = 0; x < c.width; x += 8 * pxPerFt) ctx.fillRect(x, 0, 2, c.height);
+  const ads: Array<[string, string, string]> = [
+    ['LEGACY', '#f5d33b', '#10151f'],
+    ['BALLPARK FRANKS', '#ffffff', '#b3261e'],
+    ['SEASON TICKETS', '#ffffff', '#1d3b72'],
+    ['HIT IT HERE', '#10151f', '#f5d33b'],
+  ];
+  ads.forEach(([text, fg, bg], i) => {
+    const x = (i * 60 + 12) * pxPerFt;
+    const w = 36 * pxPerFt;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, 14, w, c.height - 28);
+    ctx.fillStyle = fg;
+    ctx.font = 'bold 44px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + w / 2, c.height / 2 + 2, w - 16);
+  });
+  weather(c, 10, 0, 1, 3);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
   tex.anisotropy = maxAniso;
   return tex;
 }
@@ -242,6 +407,8 @@ function wallAndStands(bounds: Array<[number, number]>, maxAniso: number): THREE
   });
 
   const wallPos: number[] = [];
+  const wallUv: number[] = [];
+  let wallU = 0;
   const standPos: number[] = [];
   const standUv: number[] = [];
   const standIdx: number[] = [];
@@ -255,15 +422,20 @@ function wallAndStands(bounds: Array<[number, number]>, maxAniso: number): THREE
     const dist = Math.hypot(x, z);
     const isOutfield = dist > 250;
     const h = isOutfield ? WALL_HEIGHT : 6;
+    if (i > 0) {
+      const [px, pz] = bounds[(i - 1) % n];
+      wallU += Math.hypot(x - px, z - pz) / 240;
+    }
     wallPos.push(x, 0, z, x, h, z);
+    wallUv.push(wallU, 0, wallU, 1);
     const depth = isOutfield ? 110 : 90;
     const rise = isOutfield ? 55 : 50;
     standPos.push(x + nx * 2, h, z + nz * 2, x + nx * depth, h + rise, z + nz * depth);
     if (i > 0) {
       const [px, pz] = bounds[(i - 1) % n];
-      u += Math.hypot(x - px, z - pz) / 60;
+      u += Math.hypot(x - px, z - pz) / 230;
     }
-    standUv.push(u, 0, u, 3);
+    standUv.push(u, 0, u, 1.25);
     if (i > 0) {
       const a = (i - 1) * 2;
       wallIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
@@ -284,11 +456,12 @@ function wallAndStands(bounds: Array<[number, number]>, maxAniso: number): THREE
 
   const wallGeo = new THREE.BufferGeometry();
   wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
+  wallGeo.setAttribute('uv', new THREE.Float32BufferAttribute(wallUv, 2));
   wallGeo.setIndex(wallIdx);
   wallGeo.computeVertexNormals();
   const wall = new THREE.Mesh(
     wallGeo,
-    new THREE.MeshStandardMaterial({ color: '#2e6b48', emissive: '#12301f', roughness: 0.9, side: THREE.DoubleSide }),
+    new THREE.MeshStandardMaterial({ map: wallTexture(maxAniso), roughness: 0.85, side: THREE.DoubleSide }),
   );
   wall.receiveShadow = true;
   g.add(wall);
@@ -427,32 +600,60 @@ function scoreboard(): THREE.Group {
   return g;
 }
 
-function sky(): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(3000, 32, 16);
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    uniforms: {
-      top: { value: new THREE.Color('#3f7fd4') },
-      horizon: { value: new THREE.Color('#cfe3f5') },
-    },
-    vertexShader: `varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform vec3 top; uniform vec3 horizon; varying vec3 vPos;
-      void main(){ float h = clamp(normalize(vPos).y, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, pow(h, 0.55)), 1.0); }`,
-  });
-  return new THREE.Mesh(geo, mat);
+/** Direction the sunlight comes from (toward the sun). */
+const SUN_DIR = new THREE.Vector3(-120, 220, 170).normalize();
+
+const SKY_GAIN = 0.5;
+
+/** Physically based daytime sky with a few clouds. */
+function sky(): Sky {
+  const sky = new Sky();
+  sky.scale.setScalar(6000);
+  const u = sky.material.uniforms;
+  u.turbidity.value = 4;
+  u.rayleigh.value = 1.2;
+  u.mieCoefficient.value = 0.004;
+  u.mieDirectionalG.value = 0.8;
+  u.sunPosition.value.copy(SUN_DIR);
+  u.cloudCoverage.value = 0.32;
+  u.cloudDensity.value = 0.35;
+  u.showSunDisc.value = 0;
+  // The physical sky is far brighter than the scene's other lights; tone it down.
+  sky.material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'gl_FragColor = vec4( texColor, 1.0 );',
+      `gl_FragColor = vec4( texColor * ${SKY_GAIN.toFixed(2)}, 1.0 );`,
+    );
+  };
+  return sky;
 }
 
-export function buildStadium(renderer: THREE.WebGLRenderer): THREE.Group {
+/** Image-based lighting from the sky (and a grass-colored ground) for soft, realistic shading. */
+function skyEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
+  const envScene = new THREE.Scene();
+  envScene.add(sky());
+  const ground = new THREE.Mesh(new THREE.CircleGeometry(5000, 16), new THREE.MeshBasicMaterial({ color: '#2f5a2a' }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -20;
+  envScene.add(ground);
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const env = pmrem.fromScene(envScene, 0, 1, 20000).texture;
+  pmrem.dispose();
+  return env;
+}
+
+/** Build the ballpark into `scene` (including its sky lighting). */
+export function buildStadium(renderer: THREE.WebGLRenderer, scene: THREE.Scene): THREE.Group {
   const g = new THREE.Group();
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const bounds = stadiumBoundary();
+  const bump = detailBump(aniso);
 
   const outer: GroundRegion = { xmin: -340, xmax: 340, zmin: -480, zmax: 120, ppf: 2 };
-  g.add(groundPlane(outer, groundTexture(outer, drawField, aniso), 0, false));
+  g.add(groundPlane(outer, groundTexture(outer, drawField, aniso), 0, false, bump));
 
   const inner: GroundRegion = { xmin: -128, xmax: 128, zmin: -170, zmax: 30, ppf: 8 };
-  g.add(groundPlane(inner, groundTexture(inner, drawInfield, aniso), 0.02, true));
+  g.add(groundPlane(inner, groundTexture(inner, drawInfield, aniso), 0.02, true, bump));
 
   // Big ground skirt beyond the stands so there are no gaps at the horizon.
   const skirt = new THREE.Mesh(new THREE.CircleGeometry(2500, 32), new THREE.MeshStandardMaterial({ color: '#2d3a2c' }));
@@ -472,11 +673,13 @@ export function buildStadium(renderer: THREE.WebGLRenderer): THREE.Group {
   g.add(scoreboard());
   g.add(sky());
 
-  // Lighting: warm sun + sky fill.
-  const hemi = new THREE.HemisphereLight('#d6e8ff', '#3a5a2a', 1.1);
+  // Lighting: warm sun, sky-based ambient light and a little hemisphere fill.
+  scene.environment = skyEnvironment(renderer);
+  scene.environmentIntensity = 0.5;
+  const hemi = new THREE.HemisphereLight('#d6e8ff', '#3a5a2a', 0.35);
   g.add(hemi);
-  const sun = new THREE.DirectionalLight('#fff4e0', 2.4);
-  sun.position.set(-120, 220, 140);
+  const sun = new THREE.DirectionalLight('#fff1d6', 2.6);
+  sun.position.copy(SUN_DIR).multiplyScalar(280).add(new THREE.Vector3(0, 0, -30));
   sun.target.position.set(0, 0, -30);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -488,7 +691,9 @@ export function buildStadium(renderer: THREE.WebGLRenderer): THREE.Group {
   sc.near = 50;
   sc.far = 600;
   sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.02;
   g.add(sun, sun.target);
 
+  scene.add(g);
   return g;
 }

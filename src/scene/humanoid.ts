@@ -49,6 +49,24 @@ export interface Appearance {
 
 const BASE_HEIGHT_IN = 73;
 
+function frontNumberTexture(number: number, color: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 96px sans-serif';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.fillStyle = color;
+  ctx.strokeText(String(number), 64, 70);
+  ctx.fillText(String(number), 64, 70);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 function backPlateTexture(name: string | undefined, number: number, color: string): THREE.CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 256;
@@ -146,7 +164,7 @@ function solveTwoBone(
 }
 
 function segment(radiusTop: number, radiusBottom: number, mat: THREE.Material): THREE.Mesh {
-  const g = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, 10);
+  const g = new THREE.CylinderGeometry(radiusTop, radiusBottom, 1, 14, 1, true);
   const m = new THREE.Mesh(g, mat);
   m.castShadow = true;
   return m;
@@ -171,7 +189,7 @@ export class Humanoid {
   readonly bat: THREE.Group | null;
   private readonly limbs: Record<string, THREE.Mesh> = {};
   private readonly joints: Record<string, THREE.Mesh> = {};
-  private readonly feet: { R: THREE.Mesh; L: THREE.Mesh };
+  private readonly feet: { R: THREE.Group; L: THREE.Group };
   private readonly hands: { R: THREE.Mesh; L: THREE.Mesh };
   pose: Pose;
 
@@ -192,41 +210,60 @@ export class Humanoid {
     const socks = new THREE.MeshStandardMaterial({ color: app.undershirt ?? app.cap, roughness: 0.85 });
     const dark = new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.6 });
     const hairMat = new THREE.MeshStandardMaterial({ color: app.hairColor ?? '#2a1b12', roughness: 0.9 });
+    const sole = new THREE.MeshStandardMaterial({ color: '#2b2b2b', roughness: 0.8 });
 
     this.root.add(this.pelvis);
     this.pelvis.add(this.chest);
     this.scale = (app.heightIn ?? BASE_HEIGHT_IN) / BASE_HEIGHT_IN;
     this.root.scale.set(this.scale * (opts.mirrored ? -1 : 1), this.scale, this.scale);
 
-    const hips = new THREE.Mesh(new THREE.BoxGeometry(1.0 * bw, 0.55, 0.62 * bw), pants);
-    hips.position.y = 0.05;
+    // Rounded hips and a belt.
+    const hips = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 12), pants);
+    hips.scale.set(0.98 * bw, 0.56, 0.6 * bw);
+    hips.position.y = 0.14;
     hips.castShadow = true;
     this.pelvis.add(hips);
-    const belt = new THREE.Mesh(new THREE.BoxGeometry(1.02 * bw, 0.1, 0.64 * bw), dark);
+    const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.505, 0.505, 0.1, 20), dark);
+    belt.scale.set(bw, 1, 0.64 * bw);
     belt.position.y = 0.3;
     this.pelvis.add(belt);
 
-    const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.72 * bw, 0.52 * bw, 1.55, 16), jersey);
-    torso.scale.z = 0.62;
-    torso.position.y = 0.95;
+    // Athletic torso: narrow waist, broad chest, rounded shoulders (a lathe, flattened front to back).
+    const profile = [
+      [0.5, 0.15],
+      [0.53, 0.4],
+      [0.6, 0.8],
+      [0.7, 1.2],
+      [0.74, 1.45],
+      [0.72, 1.62],
+      [0.6, 1.76],
+      [0.36, 1.86],
+      [0.0, 1.9],
+    ].map(([r, y]) => new THREE.Vector2(r, y));
+    const torso = new THREE.Mesh(new THREE.LatheGeometry(profile, 24), jersey);
+    torso.scale.set(bw, 1, 0.62 * bw);
     torso.castShadow = true;
     this.chest.add(torso);
-    // Rounded shoulders.
-    const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.72 * bw, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), jersey);
-    shoulders.scale.set(1, 0.32, 0.62);
-    shoulders.position.y = 1.7;
-    this.chest.add(shoulders);
 
     if (app.number !== undefined) {
       const plate = new THREE.Mesh(
         new THREE.PlaneGeometry(0.95 * bw, 0.95),
         new THREE.MeshStandardMaterial({ map: backPlateTexture(app.backName, app.number, app.undershirt ?? app.cap), transparent: true, roughness: 0.8 }),
       );
-      plate.position.set(0, 1.05, -0.62 * 0.62 * bw - 0.03);
+      plate.position.set(0, 1.05, -0.64 * 0.62 * bw - 0.03);
       plate.rotation.y = Math.PI;
       // Keep the lettering readable on mirrored (left-handed) models.
       if (opts.mirrored) plate.scale.x = -1;
       this.chest.add(plate);
+      // Small number on the front, over the heart (the model's left, +x).
+      const front = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.3, 0.3),
+        new THREE.MeshStandardMaterial({ map: frontNumberTexture(app.number, app.undershirt ?? app.cap), transparent: true, roughness: 0.8 }),
+      );
+      front.position.set(0.3 * bw, 1.3, 0.41 * bw + 0.02);
+      front.rotation.y = 0.35;
+      if (opts.mirrored) front.scale.x = -1;
+      this.chest.add(front);
     }
 
     const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.3, 8), skin);
@@ -238,6 +275,19 @@ export class Humanoid {
     head.position.y = 2.25;
     head.castShadow = true;
     this.chest.add(head);
+
+    // Ears and nose.
+    const earGeo = new THREE.SphereGeometry(0.085, 10, 8);
+    for (const x of [-0.36, 0.36]) {
+      const ear = new THREE.Mesh(earGeo, skin);
+      ear.scale.set(0.5, 1, 0.8);
+      ear.position.set(x, 2.24, 0.0);
+      this.chest.add(ear);
+    }
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), skin);
+    nose.scale.set(0.8, 1.1, 1);
+    nose.position.set(0, 2.19, 0.38);
+    this.chest.add(nose);
 
     // Face: eyes, eye black, facial hair. The face points +z.
     const eyeGeo = new THREE.SphereGeometry(0.045, 8, 6);
@@ -295,13 +345,37 @@ export class Humanoid {
       }
     }
 
-    const capTop = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), cap);
-    capTop.position.y = 2.33;
-    this.chest.add(capTop);
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.04, 16, 1, false, -Math.PI / 2, Math.PI), cap);
-    brim.position.set(0, 2.36, 0.28);
-    brim.scale.z = 1.2;
-    this.chest.add(brim);
+    if (opts.bat) {
+      // Batting helmet: glossy shell, short brim, ear flap on the side facing the pitcher.
+      const shell = new THREE.MeshPhysicalMaterial({ color: app.cap, roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.12 });
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.58), shell);
+      dome.scale.set(1, 0.95, 1.08);
+      dome.position.y = 2.24;
+      this.chest.add(dome);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.04, 20, 1, false, -Math.PI / 2, Math.PI), shell);
+      brim.position.set(0, 2.33, 0.3);
+      brim.scale.z = 0.8;
+      brim.rotation.x = 0.12;
+      this.chest.add(brim);
+      const flap = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10, 0, Math.PI), shell);
+      flap.rotation.y = Math.PI / 2;
+      flap.scale.set(1, 1.05, 0.5);
+      flap.position.set(0.38, 2.12, 0.02);
+      this.chest.add(flap);
+    } else {
+      const capTop = new THREE.Mesh(new THREE.SphereGeometry(0.41, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), cap);
+      capTop.scale.set(1, 0.9, 1.05);
+      capTop.position.y = 2.32;
+      this.chest.add(capTop);
+      const button = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), cap);
+      button.position.y = 2.69;
+      this.chest.add(button);
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.04, 20, 1, false, -Math.PI / 2, Math.PI), cap);
+      brim.position.set(0, 2.34, 0.3);
+      brim.scale.z = 1.25;
+      brim.rotation.x = 0.1;
+      this.chest.add(brim);
+    }
 
     this.limbs.thighR = segment(0.27 * lw, 0.2 * lw, pants);
     this.limbs.shinR = segment(0.2 * lw, 0.15 * lw, socks);
@@ -311,18 +385,43 @@ export class Humanoid {
     this.limbs.foreR = segment(0.13 * lw, 0.11 * lw, skin);
     this.limbs.upperL = segment(0.17 * lw, 0.14 * lw, sleeve);
     this.limbs.foreL = segment(0.13 * lw, 0.11 * lw, skin);
+    // Short jersey sleeves over the undershirt.
+    this.limbs.sleeveR = segment(0.21 * lw, 0.19 * lw, jersey);
+    this.limbs.sleeveL = segment(0.21 * lw, 0.19 * lw, jersey);
     for (const m of Object.values(this.limbs)) this.root.add(m);
 
-    for (const name of ['kneeR', 'kneeL', 'elbowR', 'elbowL']) {
-      const isKnee = name.startsWith('knee');
-      const j = new THREE.Mesh(new THREE.SphereGeometry(isKnee ? 0.2 : 0.14, 10, 8), isKnee ? pants : sleeve);
+    // Ball joints round off the ends of the limb segments.
+    const jointSpec: Array<[string, number, THREE.Material]> = [
+      ['kneeR', 0.2 * lw, pants],
+      ['kneeL', 0.2 * lw, pants],
+      ['elbowR', 0.14 * lw, sleeve],
+      ['elbowL', 0.14 * lw, sleeve],
+      ['shoulderR', 0.21 * lw, jersey],
+      ['shoulderL', 0.21 * lw, jersey],
+      ['hipR', 0.27 * lw, pants],
+      ['hipL', 0.27 * lw, pants],
+      ['ankleR', 0.15 * lw, socks],
+      ['ankleL', 0.15 * lw, socks],
+    ];
+    for (const [name, r, mat] of jointSpec) {
+      const j = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10), mat);
       this.joints[name] = j;
       this.root.add(j);
     }
 
-    const footGeo = new THREE.BoxGeometry(0.34, 0.24, 0.9);
-    footGeo.translate(0, 0, 0.22);
-    this.feet = { R: new THREE.Mesh(footGeo, shoe), L: new THREE.Mesh(footGeo, shoe) };
+    // Cleats: a rounded upper on a light sole.
+    const makeShoe = () => {
+      const shoeG = new THREE.Group();
+      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.5, 6, 12), shoe);
+      upper.rotation.x = Math.PI / 2;
+      upper.scale.set(1.05, 1, 0.78);
+      upper.position.set(0, 0.03, 0.22);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.78), sole);
+      base.position.set(0, -0.09, 0.22);
+      shoeG.add(upper, base);
+      return shoeG;
+    };
+    this.feet = { R: makeShoe(), L: makeShoe() };
     this.root.add(this.feet.R, this.feet.L);
 
     const handGeo = new THREE.SphereGeometry(0.15, 10, 8);
@@ -411,7 +510,9 @@ export class Humanoid {
       const pole = toRoot(new THREE.Vector3(sign * 1.6, 0.4, -1.2), true);
       solveTwoBone(shoulder, target, UPPER_ARM, FOREARM, pole, mid, end);
       placeSegment(this.limbs[`upper${side}`], shoulder, mid);
+      placeSegment(this.limbs[`sleeve${side}`], shoulder, shoulder.clone().lerp(mid, 0.45));
       placeSegment(this.limbs[`fore${side}`], mid, end);
+      this.joints[`shoulder${side}`].position.copy(shoulder);
       this.joints[`elbow${side}`].position.copy(mid);
       this.hands[side].position.copy(end);
       this.hands[side].quaternion.copy(this.pelvis.quaternion).multiply(this.chest.quaternion);
@@ -422,7 +523,9 @@ export class Humanoid {
       solveTwoBone(hip, foot, THIGH, SHIN, kneePole, mid, end);
       placeSegment(this.limbs[`thigh${side}`], hip, mid);
       placeSegment(this.limbs[`shin${side}`], mid, end);
+      this.joints[`hip${side}`].position.copy(hip);
       this.joints[`knee${side}`].position.copy(mid);
+      this.joints[`ankle${side}`].position.copy(end);
       const f = this.feet[side];
       f.position.set(end.x, Math.max(0.12, end.y - 0.12), end.z);
       f.rotation.set(0, (side === 'R' ? pose.footYawR : pose.footYawL) ?? 0, 0);
