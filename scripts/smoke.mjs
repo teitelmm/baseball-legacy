@@ -177,8 +177,9 @@ try {
   await page.waitForTimeout(2500);
   await page.screenshot({ path: `${OUT}/11-game-live-play.png` });
   await page.evaluate(() => window.__game.setTimeScale(1));
-  await page.waitForFunction(() => window.__game.snapshot()?.moment === 'recap', null, { timeout: 360000 });
-  check(true, 'DH: an at-bat played live and returned to the recap');
+  // Back to the recap for the next moment, or straight to the final if he doesn't bat again.
+  await page.waitForFunction(() => ['recap', 'final'].includes(window.__game.snapshot()?.moment), null, { timeout: 360000 });
+  check(true, 'DH: an at-bat played live and the game moved on');
   await page.evaluate(() => window.__game.simToEnd());
   await finalBox('DH');
   await page.waitForTimeout(500);
