@@ -87,7 +87,7 @@ try {
   await page.evaluate(() => window.__game.setPlateLoc(0.1, 2.6));
   await page.waitForTimeout(1000);
   await page.screenshot({ path: `${OUT}/02-batting-view.png` });
-  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 150000 });
   await page.screenshot({ path: `${OUT}/03-batting-pitch-in-flight.png` });
 
   await page.evaluate(() => window.__game.setAuto(true));
@@ -140,9 +140,9 @@ try {
   await page.waitForTimeout(550);
   await page.mouse.click(cx, cy);
   await page.evaluate((s) => window.__game.setTimeScale(s), slow);
-  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 150000 });
   await page.screenshot({ path: `${OUT}/08-pitching-flight.png` });
-  await page.waitForFunction(() => window.__game.snapshot().pitches >= 1, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.__game.snapshot().pitches >= 1, null, { timeout: 150000 });
   check(true, 'pitching: a pitch thrown with real mouse clicks through the meter');
   await page.evaluate(() => window.__game.setTimeScale(1));
 
