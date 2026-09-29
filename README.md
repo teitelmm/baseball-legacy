@@ -101,6 +101,8 @@ Fielders chase, catch and throw; runners run, take extra bases, tag up and get f
 - Early swings pull the ball, late swings go the other way. The PCI above the ball tops it into
   the ground; below the ball lifts it.
 - **Reading the pitch:**
+  - The batting camera sits behind the plate, level with the middle of the strike zone, so a pitch's
+    height on screen matches its height in the zone.
   - A comet tail follows each pitch along its real path, colored by pitch type (four-seam red, sinker
     orange, slider yellow, curveball blue, changeup green).
   - The **ball tracker** dot on the strike zone shows the ball's current height and side as it comes in,

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RUBBER_Z } from '../core/constants';
+import { RUBBER_Z, ZONE_CENTER_Y } from '../core/constants';
 import type { Handedness, Vec3 } from '../core/types';
 
 export type CameraMode = 'batting' | 'pitching' | 'follow' | 'custom';
@@ -26,10 +26,15 @@ export class CameraRig {
   battingShot(bats: Handedness): Shot {
     // Behind the plate (catcher and umpire are hidden in this view), shaded slightly
     // away from the batter so he doesn't block the zone. Set well back with a longer
-    // lens: the pitch's path on screen stays even instead of swooping in at the end,
-    // so it's easier to read where it's going.
+    // lens: the pitch's path on screen stays even instead of swooping in at the end.
+    // Level with the middle of the strike zone and looking straight out, so a pitch's
+    // height on screen lines up with its height in the zone.
     const away = bats === 'R' ? 1 : -1;
-    return { pos: new THREE.Vector3(away * 1.0, 4.9, 17), look: new THREE.Vector3(away * 0.15, 2.7, -40), fov: 27 };
+    return {
+      pos: new THREE.Vector3(away * 1.0, ZONE_CENTER_Y, 17),
+      look: new THREE.Vector3(away * 0.15, ZONE_CENTER_Y, -40),
+      fov: 27,
+    };
   }
 
   pitchingShot(throws: Handedness): Shot {
