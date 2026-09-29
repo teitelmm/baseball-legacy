@@ -5,7 +5,19 @@ import { lerpPose, type Keyframes, type Pose } from './humanoid';
 // Batter: the plate is +z, the pitcher +x (mirrored for lefties).
 // Pitcher: the plate is +z. Catcher / fielders: home plate is +z.
 
-export const BATTER_STANCE: Pose = {
+/**
+ * Turn the head so the eyes point `yaw` radians from the model's forward (+z), whatever
+ * the hips and shoulders are doing; `nod` tips the head down. The neck only turns so far.
+ */
+export function eyesOn(p: Pose, yaw: number, nod = 0.08): Pose {
+  const turn = Math.max(-1.65, Math.min(1.65, yaw - p.pelvisRot[1] - p.chestRot[1]));
+  return { ...p, headRot: [nod - p.chestRot[0] * 0.5, turn, 0] };
+}
+
+/** Where the batter looks: at the pitcher (+x), a bit toward the plate. */
+const BATTER_EYES = 1.4;
+
+const BASE_STANCE: Pose = {
   pelvis: [0, 2.95, 0],
   pelvisRot: [0, -0.15, 0],
   chestRot: [0.12, -0.25, 0],
@@ -18,14 +30,30 @@ export const BATTER_STANCE: Pose = {
   bat: { h: [-0.35, 4.3, 0.6], yaw: 200, pitch: 58 },
 };
 
-export const BATTER_LOAD: Pose = {
-  ...BATTER_STANCE,
-  pelvis: [-0.25, 2.9, 0],
-  pelvisRot: [0, -0.3, 0],
-  chestRot: [0.12, -0.4, 0],
-  footL: [1.15, 0.45, 0.1],
-  bat: { h: [-0.75, 4.4, 0.45], yaw: 205, pitch: 50 },
-};
+export const BATTER_STANCE: Pose = eyesOn(BASE_STANCE, BATTER_EYES);
+
+export const BATTER_LOAD: Pose = eyesOn(
+  {
+    ...BASE_STANCE,
+    pelvis: [-0.25, 2.9, 0],
+    pelvisRot: [0, -0.3, 0],
+    chestRot: [0.12, -0.4, 0],
+    footL: [1.15, 0.45, 0.1],
+    bat: { h: [-0.75, 4.4, 0.45], yaw: 205, pitch: 50 },
+  },
+  BATTER_EYES,
+);
+
+/** Before the pitch: a little rhythm, the bat waggling over the shoulder. */
+export function batterWaggle(t: number): Pose {
+  const w = Math.sin(t * 2.2);
+  const b = BATTER_STANCE.bat!;
+  return {
+    ...BATTER_STANCE,
+    pelvis: [BATTER_STANCE.pelvis[0] - 0.04 * Math.sin(t * 1.1), BATTER_STANCE.pelvis[1], 0],
+    bat: { h: [b.h[0], b.h[1] + 0.05 * w, b.h[2]], yaw: b.yaw + 6 * w, pitch: b.pitch + 5 * Math.sin(t * 2.2 + 0.8) },
+  };
+}
 
 /** Seconds from the start of the swing until the barrel reaches the ball. */
 export const SWING_CONTACT_T = SWING_TIME_MS / 1000;
@@ -81,14 +109,17 @@ export function batterSwingKeys(contactZ: number, contactY: number): Keyframes {
     bat: { h: [0.65, 4.6, 0.25], yaw: -150, pitch: 38 },
   };
   const c = SWING_CONTACT_T;
+  // Eyes stay on the ball: on the pitcher through the stride, then down on the contact
+  // point, holding there after contact before the head comes around with the finish.
+  const contactYaw = Math.atan2(1.0, Math.max(0.5, contactZ)) + 0.35;
   return [
     [0, BATTER_LOAD],
-    [c * 0.4, stride],
-    [c * 0.73, launch],
-    [c, contact],
-    [c + 0.07, extend],
-    [c + 0.25, finish],
-    [SWING_DURATION, finish],
+    [c * 0.4, eyesOn(stride, BATTER_EYES)],
+    [c * 0.73, eyesOn(launch, (BATTER_EYES + contactYaw) / 2, 0.2)],
+    [c, eyesOn(contact, contactYaw, 0.35)],
+    [c + 0.07, eyesOn(extend, contactYaw, 0.35)],
+    [c + 0.25, { ...finish, headRot: [0.15, 0.1, 0] }],
+    [SWING_DURATION, { ...finish, headRot: [0.1, 0.05, 0] }],
   ];
 }
 
@@ -183,21 +214,23 @@ export function pitcherKeys(): Keyframes {
     handR: [-0.55, 3.2, 5.3],
     handL: [0.55, 3.4, 5.4],
   };
+  // Eyes on the catcher's mitt the whole way through the delivery.
+  const set = eyesOn(PITCHER_SET, 0, 0.05);
   return [
-    [0, PITCHER_SET],
-    [0.3, PITCHER_SET],
-    [0.55, pivot],
-    [0.8, lift],
-    [1.0, stride],
-    [1.18, plant],
-    [WINDUP_DURATION, release],
-    [1.55, follow],
-    [PITCH_ANIM_DURATION, ready],
+    [0, set],
+    [0.3, set],
+    [0.55, eyesOn(pivot, 0, 0.05)],
+    [0.8, eyesOn(lift, 0, 0.05)],
+    [1.0, eyesOn(stride, 0, 0.05)],
+    [1.18, eyesOn(plant, 0, 0.1)],
+    [WINDUP_DURATION, eyesOn(release, 0, 0.15)],
+    [1.55, eyesOn(follow, 0.1, 0.2)],
+    [PITCH_ANIM_DURATION, eyesOn(ready, 0, 0.1)],
   ];
 }
 
 export function pitcherSetPose(): Pose {
-  return PITCHER_SET;
+  return eyesOn(PITCHER_SET, 0, 0.05);
 }
 
 // ---------------------------------------------------------------------------

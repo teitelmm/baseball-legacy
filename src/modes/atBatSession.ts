@@ -16,7 +16,7 @@ import { maxVelocity, movementScale, PITCH_TYPES } from '../sim/pitchTypes';
 import type { PlaySetup } from '../sim/playSim';
 import { evaluateSwing, pciSize, timingWindows, type SwingParams, type SwingResult } from '../sim/swing';
 import { isStrike } from '../sim/zone';
-import { BATTER_STANCE, batterLoadKeys, batterSwingKeys, catcherPose, pitcherKeys, SWING_DURATION, WINDUP_DURATION } from '../scene/animations';
+import { BATTER_STANCE, batterLoadKeys, batterSwingKeys, batterWaggle, catcherPose, pitcherKeys, SWING_DURATION, WINDUP_DURATION } from '../scene/animations';
 import { BATTER_OFFSET, CATCHER_ROOT_Z, FieldActors } from '../scene/actors';
 import { BallView, GHOST_COUNT } from '../scene/ballView';
 import type { CameraRig } from '../scene/cameraRig';
@@ -563,7 +563,7 @@ export class AtBatSession {
     this.zone.setZoneVisible(tuning.showZone);
     const guide = this.isUserBatting() && pitchGuideOn(this.difficulty);
     this.ball.showTrail = tuning.showTrail;
-    this.ball.boost = this.isUserBatting() && this.phase !== 'inPlay' ? 1.8 : 1;
+    this.ball.boost = this.isUserBatting() && this.phase !== 'inPlay' ? 1.45 : 1;
     this.ball.setGlow(this.isUserBatting() && (this.phase === 'windup' || this.phase === 'flight'));
     this.zone.update(dt);
 
@@ -635,8 +635,9 @@ export class AtBatSession {
   }
 
   private updatePrePitch(now: number): void {
-    // Ball in the pitcher's hand.
+    // Ball in the pitcher's hand; the batter waggles the bat while he waits.
     this.placeBallInHand();
+    this.actors.batter.apply(batterWaggle(now / 1000));
     if (this.isUserBatting()) {
       if (now - this.phaseAt > PRE_PITCH_MS) this.cpuPitch(now);
       return;

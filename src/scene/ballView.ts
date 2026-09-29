@@ -24,7 +24,7 @@ export class BallView {
   constructor(scene: THREE.Scene) {
     const tex = ballTexture();
     this.mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(BALL_RADIUS * 1.35, 16, 12),
+      new THREE.SphereGeometry(BALL_RADIUS * 1.2, 16, 12),
       new THREE.MeshStandardMaterial({ map: tex, roughness: 0.45, emissive: '#222222' }),
     );
     this.mesh.castShadow = true;
@@ -91,7 +91,7 @@ export class BallView {
    */
   setGhosts(points: Vec3[], color: string, length = 1): void {
     const n = Math.round(points.length * length);
-    const base = this.mesh.scale.x * BALL_RADIUS * 2 * 1.35;
+    const base = this.mesh.scale.x * BALL_RADIUS * 2 * 1.2;
     this.ghosts.forEach((g, i) => {
       const p = points[i];
       g.visible = !!p && i < n;

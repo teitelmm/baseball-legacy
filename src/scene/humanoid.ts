@@ -24,6 +24,8 @@ export interface Pose {
   footYawR?: number;
   footYawL?: number;
   bat?: BatPose;
+  /** Head turn relative to the chest (x nod, y turn, z tilt), e.g. to keep eyes on the ball. */
+  headRot?: P3;
 }
 
 export interface Appearance {
@@ -119,18 +121,74 @@ export function lerpPose(a: Pose, b: Pose, t: number): Pose {
   if (a.bat && b.bat) {
     p.bat = { h: lerp3(a.bat.h, b.bat.h, t), yaw: lerp(a.bat.yaw, b.bat.yaw, t), pitch: lerp(a.bat.pitch, b.bat.pitch, t) };
   }
+  if (a.headRot || b.headRot) p.headRot = lerp3(a.headRot ?? [0, 0, 0], b.headRot ?? [0, 0, 0], t);
   return p;
 }
 
-/** Sample keyframes at time t with smoothstep easing between keys. */
+/** A pose as a flat list of numbers (and back), for smooth curves through keyframes. */
+function flatten(p: Pose): number[] {
+  const bat = p.bat ?? { h: [0, 0, 0], yaw: 0, pitch: 0 };
+  return [
+    ...p.pelvis, ...p.pelvisRot, ...p.chestRot, ...p.handR, ...p.handL, ...p.footR, ...p.footL,
+    p.footYawR ?? 0, p.footYawL ?? 0, ...bat.h, bat.yaw, bat.pitch, ...(p.headRot ?? [0, 0, 0]),
+  ];
+}
+
+function unflatten(v: number[], like: Pose): Pose {
+  const t3 = (i: number): P3 => [v[i], v[i + 1], v[i + 2]];
+  const p: Pose = {
+    pelvis: t3(0), pelvisRot: t3(3), chestRot: t3(6), handR: t3(9), handL: t3(12), footR: t3(15), footL: t3(18),
+    footYawR: v[21], footYawL: v[22], headRot: t3(28),
+  };
+  if (like.bat) p.bat = { h: t3(23), yaw: v[26], pitch: v[27] };
+  return p;
+}
+
+/**
+ * Sample keyframes at time t. Motion flows through the keys on a smooth curve (cubic
+ * Hermite with Catmull-Rom tangents), easing in and out only at the ends and at holds,
+ * instead of stopping at every key.
+ */
 export function samplePose(keys: Keyframes, t: number): Pose {
   if (t <= keys[0][0]) return keys[0][1];
-  for (let i = 0; i < keys.length - 1; i++) {
-    const [t0, p0] = keys[i];
-    const [t1, p1] = keys[i + 1];
-    if (t <= t1) return lerpPose(p0, p1, smooth((t - t0) / (t1 - t0)));
-  }
-  return keys[keys.length - 1][1];
+  const n = keys.length;
+  if (t >= keys[n - 1][0]) return keys[n - 1][1];
+  let i = 0;
+  while (i < n - 2 && t > keys[i + 1][0]) i++;
+  const [t1, p1] = keys[i];
+  const [t2, p2] = keys[i + 1];
+  const span = t2 - t1;
+  if (span <= 1e-6) return p2;
+  const u = (t - t1) / span;
+  const a = flatten(p1);
+  const b = flatten(p2);
+  const prev = i > 0 ? keys[i - 1] : null;
+  const next = i + 2 < n ? keys[i + 2] : null;
+  const pa = prev ? flatten(prev[1]) : null;
+  const nb = next ? flatten(next[1]) : null;
+  const u2 = u * u;
+  const u3 = u2 * u;
+  const h00 = 2 * u3 - 3 * u2 + 1;
+  const h10 = u3 - 2 * u2 + u;
+  const h01 = -2 * u3 + 3 * u2;
+  const h11 = u3 - u2;
+  const out = a.map((av, k) => {
+    const bv = b[k];
+    // Same value at both keys: a hold, stay put.
+    if (Math.abs(bv - av) < 1e-9) return av;
+    // Tangents (per unit of this span); zero at the ends and where a key repeats (a hold).
+    const m1 = pa && prev ? ((bv - pa[k]) / (t2 - prev[0])) * span : 0;
+    const m2 = nb && next ? ((nb[k] - av) / (next[0] - t1)) * span : 0;
+    const hold1 = pa !== null && Math.abs(pa[k] - av) < 1e-9;
+    const hold2 = nb !== null && Math.abs(nb[k] - bv) < 1e-9;
+    return h00 * av + h10 * (hold1 ? 0 : m1) + h01 * bv + h11 * (hold2 ? 0 : m2);
+  });
+  return unflatten(out, p1.bat ? p1 : p2);
+}
+
+/** Ease between two poses (for blending one animation into another). */
+export function blendPose(a: Pose, b: Pose, t: number): Pose {
+  return lerpPose(a, b, smooth(Math.max(0, Math.min(1, t))));
 }
 
 export function batDirection(bat: BatPose, out = new THREE.Vector3()): THREE.Vector3 {
@@ -196,6 +254,8 @@ export class Humanoid {
   readonly root = new THREE.Group();
   readonly pelvis = new THREE.Group();
   readonly chest = new THREE.Group();
+  /** Head, face, hair and cap/helmet: turns on the neck. */
+  readonly head = new THREE.Group();
   readonly bat: THREE.Group | null;
   private readonly limbs: Record<string, THREE.Mesh> = {};
   private readonly joints: Record<string, THREE.Mesh> = {};
@@ -488,8 +548,24 @@ export class Humanoid {
       footR: [-0.4, 0.2, 0],
       footL: [0.4, 0.2, 0],
     };
+    // Everything above the neck turns together on a neck pivot.
+    const NECK_Y = 1.9;
+    this.head.position.set(0, NECK_Y, 0);
+    for (const c of [...this.chest.children]) {
+      if (c.position.y >= NECK_Y) {
+        this.chest.remove(c);
+        c.position.y -= NECK_Y;
+        this.head.add(c);
+      }
+    }
+    this.chest.add(this.head);
+
+    // Only the big parts cast shadows; eyes, brows, buttons and the like aren't worth the cost.
     this.root.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      m.geometry.computeBoundingSphere();
+      m.castShadow = (m.geometry.boundingSphere?.radius ?? 1) > 0.12;
     });
     this.apply(this.pose);
   }
@@ -505,6 +581,7 @@ export class Humanoid {
     this.pelvis.rotation.set(...pose.pelvisRot);
     this.chest.position.set(0, 0.25, 0);
     this.chest.rotation.set(...pose.chestRot);
+    this.head.rotation.set(...(pose.headRot ?? ([0, 0, 0] as P3)));
     this.pelvis.updateMatrix();
     this.chest.updateMatrix();
 
