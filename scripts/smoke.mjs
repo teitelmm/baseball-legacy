@@ -139,6 +139,14 @@ try {
   await page.mouse.click(cx, cy);
   await page.waitForTimeout(550);
   await page.mouse.click(cx, cy);
+  // Under very slow software rendering a click can land before the pitcher is ready;
+  // keep clicking (as a player would) until the pitch is on its way.
+  for (let k = 0; k < 20; k++) {
+    const ph = await page.evaluate(() => window.__game.snapshot().phase);
+    if (ph !== 'prePitch') break;
+    await page.mouse.click(cx, cy);
+    await page.waitForTimeout(1500);
+  }
   await page.evaluate((s) => window.__game.setTimeScale(s), slow);
   await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 150000 });
   await page.screenshot({ path: `${OUT}/08-pitching-flight.png` });
