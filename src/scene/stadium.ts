@@ -12,8 +12,7 @@ import {
 } from '../core/constants';
 import { stadiumBoundary } from '../sim/field';
 
-const GRASS_A = '#3f8a3a';
-const GRASS_B = '#4a9a42';
+const GRASS_A = '#3b8133';
 const DIRT = '#b67a4a';
 const DIRT_DARK = '#a46b3e';
 const CHALK = '#f4f1e8';
@@ -164,6 +163,36 @@ function fencePath(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number) =
   ctx.closePath();
 }
 
+/**
+ * Mowing pattern like a real ballpark: wide light/dark stripes running out toward center
+ * field (the mower's passes), crossed by fainter stripes, with soft edges.
+ */
+function mowStripes(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number) => [number, number], s: number): void {
+  const [ox, oy] = toPx(0, 0);
+  ctx.save();
+  ctx.translate(ox, oy);
+  const band = 18 * s;
+  const span = 700 * s;
+  // Main passes: parallel to the line from home to center field.
+  for (let i = -40; i < 40; i++) {
+    if (i % 2) continue;
+    const g = ctx.createLinearGradient(i * band, 0, (i + 1) * band, 0);
+    g.addColorStop(0, 'rgba(120,190,90,0)');
+    g.addColorStop(0.12, 'rgba(120,190,90,0.22)');
+    g.addColorStop(0.88, 'rgba(120,190,90,0.22)');
+    g.addColorStop(1, 'rgba(120,190,90,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(i * band, -span, band, span * 2);
+  }
+  // Cross passes: fainter, at right angles.
+  for (let j = -40; j < 40; j++) {
+    if (j % 2) continue;
+    ctx.fillStyle = 'rgba(20,60,20,0.08)';
+    ctx.fillRect(-span, j * band, span * 2, band);
+  }
+  ctx.restore();
+}
+
 function drawField(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number) => [number, number], s: number) {
   // Foul territory grass.
   ctx.fillStyle = GRASS_A;
@@ -179,17 +208,7 @@ function drawField(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number) =
   ctx.clip();
   ctx.fillStyle = GRASS_A;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  // Mowing pattern: diagonal checkerboard.
-  const [ox, oy] = toPx(0, 0);
-  ctx.translate(ox, oy);
-  ctx.rotate(Math.PI / 4);
-  const band = 30 * s;
-  ctx.fillStyle = GRASS_B;
-  for (let i = -30; i < 30; i++) {
-    for (let j = -30; j < 30; j++) {
-      if ((i + j) % 2 === 0) ctx.fillRect(i * band, j * band, band, band);
-    }
-  }
+  mowStripes(ctx, toPx, s);
   ctx.restore();
 
   weather(ctx.canvas, 14, 0.35, 18 * s, 11);
@@ -245,6 +264,11 @@ function drawInfield(ctx: CanvasRenderingContext2D, toPx: (x: number, z: number)
   ctx.closePath();
   ctx.fillStyle = GRASS_A;
   ctx.fill();
+  // Same mowing stripes on the infield grass.
+  ctx.save();
+  ctx.clip();
+  mowStripes(ctx, toPx, s);
+  ctx.restore();
   // The rounded grass edge behind the base paths is covered by the arc; knock out
   // a little grass to show the dirt base cutouts.
   for (const p of [first, second, third]) circle(p[0], p[1], 13, DIRT);
@@ -492,7 +516,110 @@ function wallAndStands(bounds: Array<[number, number]>, maxAniso: number): THREE
   eyeGeo.computeVertexNormals();
   g.add(new THREE.Mesh(eyeGeo, new THREE.MeshStandardMaterial({ color: '#16261c', roughness: 1, side: THREE.DoubleSide })));
 
+  g.add(upperDeck(bounds, normals, stands.material as THREE.Material, maxAniso));
   return g;
+}
+
+/**
+ * Second deck around the infield and down the lines: it overhangs the back of the lower
+ * bowl, has a team-color facade along its front, and a roof canopy over the top.
+ */
+function upperDeck(bounds: Array<[number, number]>, normals: Array<[number, number]>, crowd: THREE.Material, maxAniso: number): THREE.Group {
+  const g = new THREE.Group();
+  const deck = { pos: [] as number[], uv: [] as number[] };
+  const facade = { pos: [] as number[], uv: [] as number[] };
+  const roof = { pos: [] as number[], uv: [] as number[] };
+  const quad = (o: { pos: number[]; uv: number[] }, a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3, u0: number, u1: number, v1: number) => {
+    // a,b along the bottom edge; c,d above them.
+    for (const [p, uu, vv] of [[a, u0, 0], [b, u1, 0], [c, u0, v1], [c, u0, v1], [b, u1, 0], [d, u1, v1]] as Array<[THREE.Vector3, number, number]>) {
+      o.pos.push(p.x, p.y, p.z);
+      o.uv.push(uu, vv);
+    }
+  };
+  const BASE = 6 + 50; // top of the lower bowl behind the infield
+  const at = (i: number, out: number, y: number) => {
+    const [x, z] = bounds[i];
+    const [nx, nz] = normals[i];
+    return new THREE.Vector3(x + nx * out, y, z + nz * out);
+  };
+  let u = 0;
+  for (let i = 1; i < bounds.length; i++) {
+    const [x0, z0] = bounds[i - 1];
+    const [x1, z1] = bounds[i];
+    if (Math.hypot(x0, z0) > 250 || Math.hypot(x1, z1) > 250) continue;
+    const du = Math.hypot(x1 - x0, z1 - z0) / 230;
+    // Facade: the front of the upper deck, above the lower bowl.
+    quad(facade, at(i - 1, 52, BASE + 2), at(i, 52, BASE + 2), at(i - 1, 52, BASE + 13), at(i, 52, BASE + 13), u, u + du, 1);
+    // Upper seating, rising away from the field.
+    quad(deck, at(i - 1, 52, BASE + 13), at(i, 52, BASE + 13), at(i - 1, 125, BASE + 58), at(i, 125, BASE + 58), u, u + du, 0.9);
+    // Roof canopy reaching back out over the upper deck.
+    quad(roof, at(i - 1, 128, BASE + 70), at(i, 128, BASE + 70), at(i - 1, 70, BASE + 66), at(i, 70, BASE + 66), u, u + du, 1);
+    // Concourse wall behind the lower bowl, under the upper deck (no sky showing through).
+    quad(roof, at(i - 1, 91, BASE - 2), at(i, 91, BASE - 2), at(i - 1, 91, BASE + 38), at(i, 91, BASE + 38), u, u + du, 1);
+    u += du;
+  }
+  const mesh = (o: { pos: number[]; uv: number[] }, mat: THREE.Material) => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(o.pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(o.uv, 2));
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, mat);
+  };
+  g.add(mesh(deck, crowd));
+  g.add(mesh(facade, new THREE.MeshStandardMaterial({ map: facadeTexture(maxAniso), roughness: 0.6, side: THREE.DoubleSide })));
+  g.add(mesh(roof, new THREE.MeshStandardMaterial({ color: '#3b4250', roughness: 0.8, metalness: 0.2, side: THREE.DoubleSide })));
+  return g;
+}
+
+/** Navy facade band with a gold stripe and the park's name. */
+function facadeTexture(maxAniso: number): THREE.CanvasTexture {
+  const [c, ctx] = makeCanvas(1024, 64);
+  ctx.fillStyle = '#1d3b72';
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#f5d33b';
+  ctx.fillRect(0, 50, c.width, 5);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 30px sans-serif';
+  ctx.textBaseline = 'middle';
+  for (let x = 40; x < c.width; x += 512) ctx.fillText('LEGACY PARK', x, 26);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.anisotropy = maxAniso;
+  return t;
+}
+
+/** Tree line and a distant skyline around the park, softened by the haze. */
+function skyline(): THREE.Mesh {
+  const [c, ctx] = makeCanvas(2048, 256);
+  const rand = seededRandom(31);
+  // City blocks behind the outfield (some sections only).
+  for (let x = 0; x < c.width; ) {
+    const w = 30 + rand() * 70;
+    const hgt = rand() < 0.35 ? 60 + rand() * 150 : 0;
+    if (hgt > 0) {
+      ctx.fillStyle = `hsl(215, 18%, ${38 + rand() * 14}%)`;
+      ctx.fillRect(x, 256 - 60 - hgt, w, hgt + 60);
+      ctx.fillStyle = 'rgba(255,255,230,0.35)';
+      for (let wy = 256 - 60 - hgt + 8; wy < 200; wy += 12) for (let wx = x + 5; wx < x + w - 6; wx += 10) if (rand() < 0.4) ctx.fillRect(wx, wy, 4, 5);
+    }
+    x += w + rand() * 40;
+  }
+  // Rolling tree line in front.
+  ctx.fillStyle = '#2b4a2c';
+  ctx.beginPath();
+  ctx.moveTo(0, 256);
+  for (let x = 0; x <= c.width; x += 6) ctx.lineTo(x, 256 - 50 - Math.sin(x * 0.05) * 6 - rand() * 14);
+  ctx.lineTo(c.width, 256);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.repeat.set(3, 1);
+  const geo = new THREE.CylinderGeometry(2400, 2400, 300, 64, 1, true);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.BackSide, fog: true, depthWrite: false }));
+  m.position.set(0, 130, -150);
+  return m;
 }
 
 function base(x: number, z: number): THREE.Mesh {
@@ -643,7 +770,7 @@ function skyEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
 }
 
 /** Build the ballpark into `scene` (including its sky lighting). */
-export function buildStadium(renderer: THREE.WebGLRenderer, scene: THREE.Scene): THREE.Group {
+export function buildStadium(renderer: THREE.WebGLRenderer, scene: THREE.Scene): Stadium {
   const g = new THREE.Group();
   const aniso = renderer.capabilities.getMaxAnisotropy();
   const bounds = stadiumBoundary();
@@ -684,16 +811,49 @@ export function buildStadium(renderer: THREE.WebGLRenderer, scene: THREE.Scene):
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
-  sc.left = -90;
-  sc.right = 90;
-  sc.top = 90;
-  sc.bottom = -90;
+  sc.left = -110;
+  sc.right = 110;
+  sc.top = 110;
+  sc.bottom = -110;
   sc.near = 50;
   sc.far = 600;
   sun.shadow.bias = -0.0005;
   sun.shadow.normalBias = 0.02;
   g.add(sun, sun.target);
+  g.add(skyline());
 
   scene.add(g);
-  return g;
+  return {
+    group: g,
+    followShadows: (camera: THREE.Camera) => followShadows(sun, camera),
+  };
+}
+
+export interface Stadium {
+  group: THREE.Group;
+  /** Keep the sun's shadows centered on what the camera is looking at. */
+  followShadows: (camera: THREE.Camera) => void;
+}
+
+const fwd = new THREE.Vector3();
+const focus = new THREE.Vector3();
+
+/**
+ * The sun's shadow map only covers about 200 ft, so it follows the action: centered on
+ * where the camera's view meets the ground (or a little ahead of a level camera).
+ */
+function followShadows(sun: THREE.DirectionalLight, camera: THREE.Camera): void {
+  camera.getWorldDirection(fwd);
+  const p = camera.position;
+  if (fwd.y < -0.03) {
+    const t = Math.min(320, -p.y / fwd.y);
+    focus.copy(p).addScaledVector(fwd, t);
+  } else {
+    focus.copy(p).addScaledVector(fwd, 70);
+  }
+  // Whole feet, so the shadows don't shimmer as the camera drifts.
+  focus.set(Math.round(focus.x), 0, Math.round(focus.z));
+  sun.target.position.copy(focus);
+  sun.position.copy(SUN_DIR).multiplyScalar(280).add(focus);
+  sun.target.updateMatrixWorld();
 }

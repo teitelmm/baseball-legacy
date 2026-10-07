@@ -36,7 +36,26 @@ renderer.toneMappingExposure = 1.0;
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog('#cfe3f5', 900, 3200);
-buildStadium(renderer, scene);
+const stadium = buildStadium(renderer, scene);
+
+// A soft vignette drawn over the frame (darker toward the corners).
+const vignetteScene = new THREE.Scene();
+const vignetteCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+{
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(128, 128, 70, 128, 128, 182);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.38)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(c);
+  vignetteScene.add(
+    new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false })),
+  );
+}
 
 const cam = new CameraRig(window.innerWidth / window.innerHeight);
 cam.setShot('batting', cam.battingShot('R'), true);
@@ -209,7 +228,11 @@ function frame(): void {
   lastReal = real;
   if (current) current.session.update(clock.now(), dt);
   else menuCamera(real, dt);
+  stadium.followShadows(cam.camera);
   renderer.render(scene, cam.camera);
+  renderer.autoClear = false;
+  renderer.render(vignetteScene, vignetteCam);
+  renderer.autoClear = true;
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -243,6 +266,9 @@ if (new URLSearchParams(location.search).has('test')) {
     setPlateLoc: (x: number, y: number) => input.setPlateLoc({ x, y }, cam.camera),
     quit: quitToMenu,
     season: () => hub.state,
+    /** Point the camera somewhere (for screenshots of the park). */
+    camShot: (px: number, py: number, pz: number, lx: number, ly: number, lz: number, fov = 50) =>
+      cam.setShot('custom', { pos: new THREE.Vector3(px, py, pz), look: new THREE.Vector3(lx, ly, lz), fov }, true),
     /** Hold a fielding pose on the home-screen preview model (for checking animations). */
     previewPose: (name: string, t = 0, spin = 0.9) => {
       const poses: Record<string, () => ReturnType<typeof runPose>> = {

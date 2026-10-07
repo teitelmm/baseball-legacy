@@ -450,6 +450,7 @@ export class AtBatSession {
       hud: this.hud,
       sfx: this.sfx,
       nameOf: (id) => this.host.nameOf(id),
+      groundCam: this.isUserBatting() ? { bats: this.batter.bats } : undefined,
     });
     this.inPlay = { play, exitVeloMph: ev, contactAt: now };
     this.phase = 'inPlay';

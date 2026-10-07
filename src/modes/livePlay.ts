@@ -21,7 +21,12 @@ export interface LivePlayDeps {
   sfx: Sfx;
   /** Player names for event call-outs. */
   nameOf?: (id: string) => string;
+  /** You hit it: watch it off the bat from the ground for a moment before the wide view. */
+  groundCam?: { bats: 'L' | 'R' };
 }
+
+/** Seconds the camera stays at ground level, behind the plate, after you hit the ball. */
+const GROUND_HOLD_S = 3.0;
 
 /**
  * Plays a ball in play in real time from a PlaySim: fielders chase and throw,
@@ -38,6 +43,8 @@ export class LivePlay {
   private marker: THREE.Mesh | null = null;
   private unsubKey: () => void = () => {};
   private camLook = new THREE.Vector3();
+  /** Ground-level camera until this many seconds into the play (0 = not used). */
+  private groundUntil = 0;
   /** Test hook: steer the user's fielder toward the landing spot and throw. */
   autoField = false;
 
@@ -68,7 +75,13 @@ export class LivePlay {
       d.hud.hint('<kbd>W A S D</kbd> / <kbd>Arrows</kbd> run to the ball &nbsp; catch is automatic &nbsp; then throw <kbd>1</kbd> 1st <kbd>2</kbd> 2nd <kbd>3</kbd> 3rd <kbd>4</kbd> home');
     }
     this.sim = new PlaySim(setup);
-    if (!userPosition) d.cam.setShot('follow', null);
+    if (!userPosition && d.groundCam) {
+      // Stay down at field level behind the plate and watch the ball go.
+      this.groundUntil = setup.foul ? 1.6 : GROUND_HOLD_S;
+      const start = this.sim.ballPosition();
+      this.camLook.set(start.x, start.y, start.z - 20);
+      d.cam.setShot('custom', this.groundShot(start), false);
+    } else if (!userPosition) d.cam.setShot('follow', null);
     else {
       const f = this.userFielder();
       this.camLook.set(setup.path.landing.x, 20, setup.path.landing.z);
@@ -116,6 +129,18 @@ export class LivePlay {
     return { x: x / len, z: z / len };
   }
 
+  /**
+   * Field-level view from the camera well beside home plate (on the side away from the
+   * batter, clear of the catcher and umpire), zooming in as the ball gets farther away.
+   */
+  private groundShot(ball: { x: number; y: number; z: number }) {
+    const away = this.d.groundCam?.bats === 'L' ? -1 : 1;
+    const pos = new THREE.Vector3(away * 13, 4.5, 9);
+    const dist = Math.hypot(ball.x - pos.x, ball.z - pos.z);
+    const fov = THREE.MathUtils.clamp(52 - dist * 0.1, 24, 52);
+    return { pos, look: this.camLook.clone(), fov };
+  }
+
   private fielderShot(x: number, z: number) {
     // Behind the fielder, looking in toward the infield / the ball.
     const back = new THREE.Vector3(x, 0, z).normalize();
@@ -149,6 +174,18 @@ export class LivePlay {
         this.marker.position.set(this.sim.landing.x, 0.15, this.sim.landing.z);
       }
       if (this.sim.userHasBall()) this.d.hud.hint('Throw: <kbd>1</kbd> first &nbsp; <kbd>2</kbd> second &nbsp; <kbd>3</kbd> third &nbsp; <kbd>4</kbd> home');
+    } else if (this.groundUntil > 0) {
+      if (this.elapsed < this.groundUntil) {
+        // Track the ball from the ground.
+        this.camLook.lerp(new THREE.Vector3(bp.x, bp.y, bp.z), Math.min(1, dt * 8));
+        const shot = this.groundShot(bp);
+        cam.steer(shot.pos, shot.look, shot.fov);
+      } else {
+        // Then rise to the wide view for the rest of the play.
+        this.groundUntil = 0;
+        cam.setShot('follow', null);
+        cam.follow(bp);
+      }
     } else {
       cam.follow(bp);
     }

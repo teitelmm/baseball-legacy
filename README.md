@@ -128,6 +128,9 @@ Fielding is realistic rather than automatic:
 - **Click** to start the meter, **click** to set power, **click** again on the yellow line for accuracy.
   The red zone at the top is max effort: a little more velocity, a lot less control.
 
+**After you hit it**, the camera stays down at field level beside home plate for about three seconds,
+following the ball off the bat, then rises to the wide view for the rest of the play.
+
 **Fielding (outfield)**
 - **W A S D** or **arrow keys** — run (relative to the camera); the yellow ring shows where the ball will land
 - The catch is automatic when you get to the ball

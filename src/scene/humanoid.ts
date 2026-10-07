@@ -92,6 +92,24 @@ function backPlateTexture(name: string | undefined, number: number, color: strin
 
 export type Keyframes = Array<[number, Pose]>;
 
+let blobTex: THREE.CanvasTexture | null = null;
+/** Soft dark spot for the contact shadow under a player's feet. */
+function blobTexture(): THREE.CanvasTexture {
+  if (blobTex) return blobTex;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(0,0,0,0.75)');
+  g.addColorStop(0.5, 'rgba(0,0,0,0.4)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  blobTex = new THREE.CanvasTexture(c);
+  return blobTex;
+}
+
 const UP = new THREE.Vector3(0, 1, 0);
 const THIGH = 1.55;
 const SHIN = 1.5;
@@ -256,6 +274,7 @@ export class Humanoid {
   readonly chest = new THREE.Group();
   /** Head, face, hair and cap/helmet: turns on the neck. */
   readonly head = new THREE.Group();
+  private readonly blob: THREE.Mesh;
   readonly bat: THREE.Group | null;
   private readonly limbs: Record<string, THREE.Mesh> = {};
   private readonly joints: Record<string, THREE.Mesh> = {};
@@ -567,6 +586,17 @@ export class Humanoid {
       m.geometry.computeBoundingSphere();
       m.castShadow = (m.geometry.boundingSphere?.radius ?? 1) > 0.12;
     });
+
+    // Contact shadow: a soft dark patch on the ground under him, so he never looks like
+    // he's floating (the sun's shadow doesn't reach every corner of the park).
+    this.blob = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 2.6),
+      new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55 }),
+    );
+    this.blob.rotation.x = -Math.PI / 2;
+    this.blob.position.y = 0.06;
+    this.blob.renderOrder = 1;
+    this.root.add(this.blob);
     this.apply(this.pose);
   }
 
@@ -582,6 +612,13 @@ export class Humanoid {
     this.chest.position.set(0, 0.25, 0);
     this.chest.rotation.set(...pose.chestRot);
     this.head.rotation.set(...(pose.headRot ?? ([0, 0, 0] as P3)));
+    // Keep the contact shadow under the body, a little tighter when he's up in the air.
+    if (this.blob) {
+      this.blob.position.x = pose.pelvis[0];
+      this.blob.position.z = pose.pelvis[2];
+      const lift = Math.max(0, Math.min(pose.footL[1], pose.footR[1]) - 0.2);
+      this.blob.scale.setScalar(Math.max(0.6, 1 - lift * 0.3));
+    }
     this.pelvis.updateMatrix();
     this.chest.updateMatrix();
 
