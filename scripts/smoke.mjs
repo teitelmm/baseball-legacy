@@ -148,7 +148,8 @@ try {
     await page.waitForTimeout(1500);
   }
   await page.evaluate((s) => window.__game.setTimeScale(s), slow);
-  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight', null, { timeout: 150000 });
+  // The pitch may already be past the plate by now on a slow machine.
+  await page.waitForFunction(() => window.__game.snapshot().phase === 'flight' || window.__game.snapshot().pitches >= 1, null, { timeout: 150000 });
   await page.screenshot({ path: `${OUT}/08-pitching-flight.png` });
   await page.waitForFunction(() => window.__game.snapshot().pitches >= 1, null, { timeout: 150000 });
   check(true, 'pitching: a pitch thrown with real mouse clicks through the meter');
