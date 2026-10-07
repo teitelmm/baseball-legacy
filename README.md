@@ -138,6 +138,10 @@ following the ball off the bat, then rises to the wide view for the rest of the 
 - The catch is automatic when you get to the ball
 - **1 / 2 / 3 / 4** — throw to first, second, third or home (the AI throws for you if you wait)
 
+**Graphics** (home screen): **High** adds ambient occlusion, bloom on the light towers, anti-aliasing and a broadcast
+color grade; **Medium** (the default) keeps everything but the ambient occlusion; **Low** is a plain render at reduced
+resolution for older laptops and phones (picked automatically on phones).
+
 **General**
 - **Esc** — pause / quit to menu
 - **`** (backtick) — debug & tuning panel (game speed, timing windows, PCI size, ratings, ball trail, pitch tail, ball tracker)

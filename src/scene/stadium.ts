@@ -675,10 +675,25 @@ function foulPoles(): THREE.Group {
   return g;
 }
 
+/**
+ * Lattice steel light towers: four tapering legs braced with cross-members, topped by a
+ * frame of lamp banks that glow (and bloom when post-processing is on).
+ */
 function lightTowers(): THREE.Group {
   const g = new THREE.Group();
-  const poleMat = new THREE.MeshStandardMaterial({ color: '#5b6270' });
-  const lampMat = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#fff6d8', emissiveIntensity: 1.2 });
+  const steel = new THREE.MeshStandardMaterial({ color: '#8a9099', roughness: 0.55, metalness: 0.6 });
+  const frameMat = new THREE.MeshStandardMaterial({ color: '#3b4048', roughness: 0.6, metalness: 0.5 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#fff4d6', emissiveIntensity: 3.2 });
+  const H = 140;
+  const strut = new THREE.CylinderGeometry(0.35, 0.35, 1, 5);
+  const beam = (a: THREE.Vector3, b: THREE.Vector3, mat: THREE.Material, r = 1) => {
+    const m = new THREE.Mesh(strut, mat);
+    const d = b.clone().sub(a);
+    m.position.copy(a).addScaledVector(d, 0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize());
+    m.scale.set(r, d.length(), r);
+    return m;
+  };
   for (const [x, z] of [
     [-330, -150],
     [330, -150],
@@ -687,13 +702,42 @@ function lightTowers(): THREE.Group {
     [-200, 90],
     [200, 90],
   ]) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.8, 150, 8), poleMat);
-    pole.position.set(x, 75, z);
-    g.add(pole);
-    const lamp = new THREE.Mesh(new THREE.BoxGeometry(28, 14, 3), lampMat);
-    lamp.position.set(x, 155, z);
-    lamp.lookAt(0, 0, -120);
-    g.add(lamp);
+    const t = new THREE.Group();
+    t.position.set(x, 0, z);
+    // Four legs, 9 ft apart at the base tapering to 4 ft at the top.
+    const corner = (k: number, y: number): THREE.Vector3 => {
+      const w = 4.5 - (y / H) * 2.5;
+      const sx = k === 0 || k === 3 ? -1 : 1;
+      const sz = k < 2 ? -1 : 1;
+      return new THREE.Vector3(sx * w, y, sz * w);
+    };
+    for (let k = 0; k < 4; k++) t.add(beam(corner(k, 0), corner(k, H), steel, 1.4));
+    // Horizontal rings and X-bracing every 14 ft.
+    for (let y = 0; y < H; y += 14) {
+      for (let k = 0; k < 4; k++) {
+        const k2 = (k + 1) % 4;
+        t.add(beam(corner(k, y + 14), corner(k2, y + 14), steel));
+        t.add(beam(corner(k, y), corner(k2, y + 14), steel, 0.7));
+        t.add(beam(corner(k2, y), corner(k, y + 14), steel, 0.7));
+      }
+    }
+    // Lamp frame: 4 rows x 6 lamps, tilted down toward the infield.
+    const head = new THREE.Group();
+    head.position.set(0, H + 9, 0);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(34, 20, 1.2), frameMat);
+    head.add(back);
+    const lampGeo = new THREE.BoxGeometry(4.2, 3.4, 0.6);
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 6; c++) {
+        const l = new THREE.Mesh(lampGeo, lampMat);
+        l.position.set(-13.75 + c * 5.5, -7.2 + r * 4.8, 0.9);
+        head.add(l);
+      }
+    }
+    t.add(head);
+    // Face the infield (lookAt points the frame's +z at the target), tipped down a little.
+    head.lookAt(new THREE.Vector3(-x, -60 - (H + 9), -110 - z));
+    g.add(t);
   }
   return g;
 }

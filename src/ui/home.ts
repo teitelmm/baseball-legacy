@@ -130,6 +130,9 @@ function heightLabel(inches: number): string {
 export interface HomeHandlers {
   practice: (opts: PracticeOptions, profile: PlayerProfile) => void;
   game: (opts: GameSetupOptions) => void;
+  /** Current graphics quality, and changing it. */
+  graphics: () => 'low' | 'medium' | 'high';
+  setGraphics: (q: 'low' | 'medium' | 'high') => void;
   /** Open the season hub for this slot's player. */
   season: (slot: number, profile: PlayerProfile, difficulty: DifficultyName) => void;
   /** The active player changed (use their ratings). */
@@ -331,6 +334,9 @@ export class Home {
         (v) => this.setPref({ difficulty: v }),
         true,
       ),
+    );
+    opts.appendChild(
+      segmented('graphics', 'GRAPHICS', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], this.handlers.graphics(), (v) => this.handlers.setGraphics(v), true),
     );
     opts.appendChild(
       segmented('cpu-hand', 'CPU HAND (PRACTICE)', [['R', 'Right'], ['L', 'Left'], ['S', 'Mix']], this.prefs.cpuHand, (v) => this.setPref({ cpuHand: v }), true),

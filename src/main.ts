@@ -15,6 +15,7 @@ import { PauseMenu } from './ui/menu';
 import { Home } from './ui/home';
 import { ProfileStore } from './core/storage';
 import { PlayerPreview } from './scene/preview';
+import { loadQuality, PostFX, type GraphicsQuality } from './scene/postfx';
 import { divePose, fielderReadyPose, pickupPose, reachPose, runPose, throwPose, transferPose } from './scene/animations';
 import { SeasonHub } from './ui/seasonHub';
 import type { Game } from './sim/gameSim';
@@ -58,6 +59,7 @@ const vignetteCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 }
 
 const cam = new CameraRig(window.innerWidth / window.innerHeight);
+const post = new PostFX(renderer, scene, cam.camera, loadQuality(renderer));
 cam.setShot('batting', cam.battingShot('R'), true);
 const clock = new GameClock();
 const input = new Input(canvas);
@@ -143,6 +145,8 @@ const home = new Home(
     practice: startPractice,
     game: startGame,
     profileChanged: useProfile,
+    graphics: () => post.quality,
+    setGraphics: (q: GraphicsQuality) => post.setQuality(q),
     season: (slot, profile, difficulty) => {
       home.hide();
       hub.open(slot, profile, difficulty);
@@ -203,7 +207,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('resize', () => {
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  post.setSize(window.innerWidth, window.innerHeight);
   cam.resize(window.innerWidth / window.innerHeight);
 });
 
@@ -229,10 +233,12 @@ function frame(): void {
   if (current) current.session.update(clock.now(), dt);
   else menuCamera(real, dt);
   stadium.followShadows(cam.camera);
-  renderer.render(scene, cam.camera);
-  renderer.autoClear = false;
-  renderer.render(vignetteScene, vignetteCam);
-  renderer.autoClear = true;
+  post.render();
+  if (!post.graded) {
+    renderer.autoClear = false;
+    renderer.render(vignetteScene, vignetteCam);
+    renderer.autoClear = true;
+  }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
