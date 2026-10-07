@@ -13,7 +13,7 @@ export class PlayerPreview {
   private withBat = true;
   visible = false;
   /** Test hook: hold a specific pose (and turn) instead of the idle stance. */
-  debugPose: { pose: Pose; rotX?: number; spin?: number } | null = null;
+  debugPose: { pose: Pose; rotX?: number; spin?: number; dist?: number; focus?: number } | null = null;
 
   constructor(private readonly scene: THREE.Scene) {}
 
@@ -46,9 +46,9 @@ export class PlayerPreview {
     this.model.root.rotation.x = this.debugPose?.rotX ?? 0;
     this.model.apply(this.debugPose ? this.debugPose.pose : this.withBat ? BATTER_STANCE : fielderReadyPose(now / 700));
     const h = 6.1 * this.model.scale;
-    const target = this.spot.clone().add(new THREE.Vector3(0, h * 0.52, 0));
+    const target = this.spot.clone().add(new THREE.Vector3(0, h * (this.debugPose?.focus ?? 0.52), 0));
     camera.fov = 32;
-    const dist = 21;
+    const dist = this.debugPose?.dist ?? 21;
     camera.position.set(this.spot.x, target.y + 1.6, this.spot.z + dist);
     // Shift the framing so the player sits in the middle of the space right of the panel.
     const aspect = camera.aspect;

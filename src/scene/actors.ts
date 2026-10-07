@@ -37,6 +37,8 @@ export function teamAppearance(c: TeamColors, i = 0): Appearance {
     pants: c.pants,
     cap: c.cap,
     undershirt: c.accent,
+    pinstripes: c.pinstripes,
+    logo: c.logo,
     skin: SKINS[i % SKINS.length],
     hair: HAIRS[i % HAIRS.length],
     facialHair: FACIAL[(i * 3) % FACIAL.length],

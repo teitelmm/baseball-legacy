@@ -96,6 +96,10 @@ export interface TeamColors {
   pants: string;
   cap: string;
   accent: string;
+  /** Pinstriped uniform. */
+  pinstripes?: boolean;
+  /** Letter(s) on the cap. */
+  logo?: string;
 }
 
 export interface Team {

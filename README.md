@@ -76,6 +76,8 @@ The game opens on the home screen. **Create your player** first:
 - **Bonus points:** 15 points to spend, up to +8 on any one rating.
 - **Look:** skin tone, hair and hair color, facial hair, build, height (5'8"–6'6"), eye black, and bat and glove colors.
 
+Players are built from shaped parts rather than blocks: a cranium and jaw with eyes, lids, brows, a nose and lips; a muscled torso and limbs; hands with fingers and a fielder's glove with finger stalls and webbing. Uniforms are cloth with a visible weave, a button placket with piping, a collar, a belt with a buckle, and team pinstripes and cap logos where the team wears them.
+
 Up to three players are saved in your browser (**Change Player** on the home screen). Your player's name, ratings and look are used in practice and in games. A two-way player picks the day's role before each game:
 - **Pitch + bat:** start on the mound and hit as the DH.
 - **Play your position.**

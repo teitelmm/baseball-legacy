@@ -270,7 +270,7 @@ if (new URLSearchParams(location.search).has('test')) {
     camShot: (px: number, py: number, pz: number, lx: number, ly: number, lz: number, fov = 50) =>
       cam.setShot('custom', { pos: new THREE.Vector3(px, py, pz), look: new THREE.Vector3(lx, ly, lz), fov }, true),
     /** Hold a fielding pose on the home-screen preview model (for checking animations). */
-    previewPose: (name: string, t = 0, spin = 0.9) => {
+    previewPose: (name: string, t = 0, spin = 0.9, dist?: number, focus?: number) => {
       const poses: Record<string, () => ReturnType<typeof runPose>> = {
         ready: () => fielderReadyPose(0, t),
         run: () => runPose(t, 1),
@@ -281,7 +281,7 @@ if (new URLSearchParams(location.search).has('test')) {
         pickup: () => pickupPose(),
         throw: () => throwPose(t),
       };
-      preview.debugPose = { pose: poses[name](), rotX: name === 'dive' ? 1.2 : 0, spin };
+      preview.debugPose = { pose: poses[name](), rotX: name === 'dive' ? 1.2 : 0, spin, dist, focus };
     },
   };
 }
