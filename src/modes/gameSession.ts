@@ -38,6 +38,8 @@ export interface GameSetupOptions {
   /** Your team bats second. */
   home: boolean;
   seed?: number;
+  /** Exhibition games: called once when the game ends; returns skill points earned (shown on the box score). */
+  onFinished?: (game: Game, userId: string, fieldingOuts: number) => number;
 }
 
 /** Bridges the game engine to the live at-bat view for your at-bats and your innings on the mound. */
@@ -318,7 +320,11 @@ export class GameSession {
     this.refreshHud();
     const m = this.opts.season;
     if (m) this.screens.showBoxScore(this.game, this.userId, () => m.onFinal(this.game, this.fieldingOuts), null, { again: 'Continue', menu: '' });
-    else this.screens.showBoxScore(this.game, this.userId, this.onAgain, this.onMenu);
+    else {
+      const pts = this.opts.onFinished?.(this.game, this.userId, this.fieldingOuts) ?? 0;
+      const note = this.opts.onFinished ? `+${pts} skill point${pts === 1 ? '' : 's'} · spend them in Upgrades on the home screen` : undefined;
+      this.screens.showBoxScore(this.game, this.userId, this.onAgain, this.onMenu, { again: 'Play another game', menu: 'Main menu', note });
+    }
   }
 
   /** Simulate the rest of the game (from the recap or the pause menu). */

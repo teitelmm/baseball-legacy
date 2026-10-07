@@ -17,6 +17,8 @@ import { ProfileStore } from './core/storage';
 import { PlayerPreview } from './scene/preview';
 import { divePose, fielderReadyPose, pickupPose, reachPose, runPose, throwPose, transferPose } from './scene/animations';
 import { SeasonHub } from './ui/seasonHub';
+import type { Game } from './sim/gameSim';
+import { pointsForGame } from './sim/season';
 import { finalRatings, newProfile, setPositions, type PlayerProfile } from './sim/profile';
 import type { UserRole } from './sim/team';
 
@@ -78,8 +80,19 @@ function startGame(opts: GameSetupOptions): void {
   hub.hide();
   pause.hide();
   clock.setTimeScale(tuning.timeScale);
-  const session = new GameSession(opts, { ...deps, uiRoot }, quitToMenu, () => startGame(opts));
+  // Exhibition games with your saved player earn skill points too (half the season rate).
+  const own = !opts.season && opts.profile.id === home.activeProfile?.id;
+  const run: GameSetupOptions = own ? { ...opts, onFinished: exhibitionPoints } : opts;
+  const session = new GameSession(run, { ...deps, uiRoot }, quitToMenu, () => startGame(opts));
   current = { kind: 'game', session, opts };
+}
+
+function exhibitionPoints(g: Game, userId: string, fieldingOuts: number): number {
+  const userHome = g.home.id === 'user';
+  const won = userHome ? g.score.home > g.score.away : g.score.away > g.score.home;
+  const pts = Math.floor(pointsForGame(g, userId, won, fieldingOuts) / 2);
+  home.addSkillPoints(pts);
+  return pts;
 }
 
 function quitToMenu(): void {

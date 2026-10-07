@@ -10,9 +10,6 @@ import {
   positionLabel,
   rating,
   RATING_LABEL,
-  relevantKeys,
-  upgrade,
-  upgradeCost,
   type PlayerProfile,
 } from '../sim/profile';
 import {
@@ -42,6 +39,7 @@ import {
   type SeasonLength,
 } from '../sim/season';
 import { esc, h, segmented } from './home';
+import { upgradePanel } from './upgrades';
 
 export interface SeasonHubHandlers {
   /** Start a season game (the hub is hidden while it's played). */
@@ -466,29 +464,17 @@ export class SeasonHub {
   }
 
   private renderUpgrades(body: HTMLElement): void {
-    const p = this.profile!;
-    const pts = p.skillPoints ?? 0;
-    body.innerHTML = `<p class="muted">Earn skill points in every game you play (simulated games earn half). Spend them here — higher ratings cost more.</p>`;
-    const list = h('div', { class: 'upgrades' });
-    for (const k of relevantKeys(p)) {
-      const v = rating(p, k);
-      const cost = upgradeCost(v);
-      const earned = p.progress?.[k] ?? 0;
-      const row = h('div', { class: 'up-row' });
-      row.innerHTML = `<span class="up-name">${RATING_LABEL[k]}</span><i class="bar"><i style="width:${v}%"></i></i><b>${v}</b><span class="muted up-earned">${earned ? `+${earned}` : ''}</span>`;
-      const b = h('button', { type: 'button', 'data-up': k, 'aria-label': `Raise ${RATING_LABEL[k]} for ${cost} points` }, `+1 · ${cost} pts`);
-      if (pts < cost || v >= 99 || this.busy) b.setAttribute('disabled', '');
-      b.addEventListener('click', () => {
-        const next = upgrade(this.profile!, k);
-        if (!next) return;
-        this.setProfile(next);
-        this.banner = `${RATING_LABEL[k]} is now ${rating(next, k)}.`;
-        this.render();
-      });
-      row.appendChild(b);
-      list.appendChild(row);
-    }
-    body.appendChild(list);
+    body.appendChild(
+      upgradePanel(
+        this.profile!,
+        (next, k) => {
+          this.setProfile(next);
+          this.banner = `${RATING_LABEL[k]} is now ${rating(next, k)}.`;
+          this.render();
+        },
+        !!this.busy,
+      ),
+    );
   }
 
   private renderLeaders(body: HTMLElement, s: Season): void {

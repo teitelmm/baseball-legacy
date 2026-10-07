@@ -116,7 +116,13 @@ export class GameScreens {
     });
   }
 
-  showBoxScore(g: Game, userId: string | null, onAgain: () => void, onMenu: (() => void) | null, labels = { again: 'Play another game', menu: 'Main menu' }): void {
+  showBoxScore(
+    g: Game,
+    userId: string | null,
+    onAgain: () => void,
+    onMenu: (() => void) | null,
+    labels: { again: string; menu: string; note?: string } = { again: 'Play another game', menu: 'Main menu' },
+  ): void {
     const winner = g.score.home > g.score.away ? g.home : g.away;
     const youWon = winner.id === 'user';
     const battingTable = (side: 'away' | 'home') => {
@@ -147,6 +153,7 @@ export class GameScreens {
       <div class="menu boxscore">
         <div class="sub">FINAL${g.inning > g.innings ? ` · ${g.inning} INNINGS` : ''}</div>
         <h1>${youWon ? 'You win!' : `${esc(winner.name)} win`}</h1>
+        ${labels.note ? `<div class="season-banner points-note" role="status">${esc(labels.note)}</div>` : ''}
         ${this.lineScore(g)}
         <div class="box-grid">
           ${battingTable('away')}${battingTable('home')}

@@ -161,6 +161,15 @@ try {
   await page.waitForSelector('[data-a=season-start]');
   check(true, 'new season setup after the title');
 
+  // Upgrades are also on the home screen, with the season's points carried over.
+  await page.click('[data-a=season-home]');
+  await page.waitForSelector('[data-a=upgrades]');
+  const upLabel = await page.textContent('[data-a=upgrades]');
+  check(/\d+ pts/.test(upLabel ?? ''), `home screen has Upgrades (${upLabel})`);
+  await page.click('[data-a=upgrades]');
+  await page.waitForSelector('.upgrade-panel .up-row');
+  check(true, 'home upgrades panel opens');
+
   check(errors.length === 0, `no console errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 } finally {
   await browser.close();

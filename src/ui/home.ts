@@ -35,6 +35,7 @@ import {
 } from '../sim/profile';
 import { USER_TEAM_STYLE, type UserRole } from '../sim/team';
 import { profileLook } from '../scene/actors';
+import { upgradePanel } from './upgrades';
 import type { PlayerPreview } from '../scene/preview';
 
 const PREFS_KEY = 'baseball-legacy:prefs';
@@ -135,7 +136,7 @@ export interface HomeHandlers {
   profileChanged: (profile: PlayerProfile | null) => void;
 }
 
-type View = 'home' | 'create' | 'slots' | 'setup';
+type View = 'home' | 'create' | 'slots' | 'setup' | 'upgrade';
 
 /** Home screen, player creator, save slots and game setup. */
 export class Home {
@@ -147,6 +148,7 @@ export class Home {
   private draftSlot = 0;
   private view: View = 'home';
   private confirmDelete: number | null = null;
+  private upgradeNote = '';
 
   constructor(
     parent: HTMLElement,
@@ -173,6 +175,13 @@ export class Home {
   setProfile(p: PlayerProfile): void {
     this.profile = p;
     if (this.visible) this.render();
+  }
+
+  /** Award skill points to the active player (exhibition games) and save. */
+  addSkillPoints(n: number): void {
+    if (!this.profile || this.slot === null || n <= 0) return;
+    this.profile = { ...this.profile, skillPoints: (this.profile.skillPoints ?? 0) + n };
+    this.store.save(this.slot, this.profile);
   }
 
   /** How much of the screen the left panel covers (for framing the 3D preview). */
@@ -235,6 +244,10 @@ export class Home {
         break;
       case 'setup':
         this.renderSetup(panel);
+        this.updatePreview(this.profile);
+        break;
+      case 'upgrade':
+        this.renderUpgrade(panel);
         this.updatePreview(this.profile);
         break;
     }
@@ -300,6 +313,7 @@ export class Home {
     btn(hasSeason ? 'Continue Season' : 'Start Season', 'season', true).addEventListener('click', () =>
       this.handlers.season(this.slot ?? 0, p, this.prefs.difficulty),
     );
+    btn(`Upgrades · ${p.skillPoints ?? 0} pts`, 'upgrades').addEventListener('click', () => this.go('upgrade'));
     btn('Exhibition Game', 'game').addEventListener('click', () => this.go('setup'));
     btn('Batting Practice', 'bp').addEventListener('click', () => this.practice('batting'));
     btn('Pitching Practice', 'pp').addEventListener('click', () => this.practice('pitching'));
@@ -348,6 +362,36 @@ export class Home {
       },
       p,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Upgrades
+
+  private renderUpgrade(panel: HTMLElement): void {
+    const p = this.profile!;
+    panel.appendChild(h('div', { class: 'sub' }, 'UPGRADES'));
+    const head = h('div', { class: 'upgrade-head' });
+    head.innerHTML = `<h2 class="setup-title">${esc(displayName(p))} · OVR ${overall(p)}</h2>
+      <div class="sp-chip" title="Skill points to spend"><b>${p.skillPoints ?? 0}</b><span>skill points</span></div>`;
+    panel.appendChild(head);
+    if (this.upgradeNote) panel.appendChild(h('div', { class: 'season-banner', role: 'status' }, esc(this.upgradeNote)));
+    panel.appendChild(
+      upgradePanel(p, (next, k) => {
+        this.profile = next;
+        if (this.slot !== null) this.store.save(this.slot, next);
+        this.handlers.profileChanged(next);
+        this.upgradeNote = `${RATING_LABEL[k]} is now ${rating(next, k)}.`;
+        this.render();
+      }),
+    );
+    const actions = h('div', { class: 'actions' });
+    const back = h('button', { class: 'big', type: 'button', 'data-a': 'upgrade-back' }, 'Back');
+    back.addEventListener('click', () => {
+      this.upgradeNote = '';
+      this.go('home');
+    });
+    actions.appendChild(back);
+    panel.appendChild(actions);
   }
 
   // -------------------------------------------------------------------------

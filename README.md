@@ -45,7 +45,7 @@ Your player joins the Legacy City Legends in an eight-team league. Every team pl
 
 On days you don't play, **Sim day** or **Sim to next start**. Games you play live work like an exhibition game. Leaving a season game from the pause menu sims the rest of it, and the result still counts.
 
-**Skill points:** you earn them for what you do: hits, extra bases, RBI, walks, outs and strikeouts on the mound, quality starts, outs you make in the field, and wins. Games you sim earn half. Spend them on the **Upgrades** tab; higher ratings cost more (3/4/6/8 points per +1). Upgrades carry over to your next season.
+**Skill points:** you earn them for what you do: hits, extra bases, RBI, walks, outs and strikeouts on the mound, quality starts, outs you make in the field, and wins. Games you sim earn half. Spend them on the **Upgrades** tab; higher ratings cost more (3/4/6/8 points per +1). Upgrades carry over to your next season. Upgrades are also on the home screen (**Upgrades · N pts**), and exhibition games with your player earn half the season rate; the final box score shows what you earned.
 
 **The hub:**
 - **Standings:** the dashed line is the playoff cut.

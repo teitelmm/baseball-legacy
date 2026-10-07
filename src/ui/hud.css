@@ -1692,3 +1692,29 @@ body {
     font-size: 19px;
   }
 }
+
+/* Upgrades (home screen and season hub) */
+
+.upgrade-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.upgrade-panel > p {
+  margin: 0;
+}
+
+.upgrade-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.upgrade-head .setup-title {
+  margin: 0;
+}
+
+.boxscore .points-note {
+  margin: 8px 0 12px;
+}
